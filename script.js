@@ -1,263 +1,263 @@
-// Карта аудио для кнопок
+// script.js
+
+// Глобальные настройки
+const BPM = 120;
+const beatDuration = (60 / BPM) * 1000;
+const loopDuration = beatDuration * 4;
+
+let isPlaying = false;
+let globalTimer = null;
+const activeSounds = {};
+let currentVolume = 1; // Громкость по умолчанию
+
+// Карта аудио и путей
 const audioMap = {
-    kickButton1: new Audio('./access/sounds/kick1.mp3'),
-    kickButton2: new Audio('./access/sounds/kick2.mp3'),
-    kickButton3: new Audio('./access/sounds/kick3.mp3'),
-    melodyButton1: new Audio('./access/sounds/melody1.mp3'),
-    melodyButton2: new Audio('./access/sounds/melody2.mp3'),
-    melodyButton3: new Audio('./access/sounds/melody3.mp3'),
-    melodyTopButton1: new Audio('./access/sounds/melodyTop1.wav'),
-    melodyTopButton2: new Audio('./access/sounds/melodyTop2.wav'),
-    melodyTopButton3: new Audio('./access/sounds/melodyTop3.wav'),
-    thirdButton1: new Audio('./access/sounds/third1.wav'),
-    thirdButton2: new Audio('./access/sounds/third2.wav'),
-    thirdButton3: new Audio('./access/sounds/third3.wav'),
-    fourthButton1: new Audio('./access/sounds/fourth1.wav'),
-    fourthButton2: new Audio('./access/sounds/fourth2.wav'),
-    fourthButton3: new Audio('./access/sounds/fourth3.wav')
-  };
-  
-  // Объект для хранения интервалов
-  const intervals = {};
-  
-  // Глобальная переменная для громкости (0–1)
-  let currentVolume = 0.5;
-  
-  // Переменные для записи звука приложения (без микрофона)
-  let audioContext;
-  let destination;
-  let mediaRecorder;
-  let recordedChunks = [];
-  
-  // Функция воспроизведения звука
-  function playSound(buttonId) {
-    const sound = audioMap[buttonId];
-    if (sound) {
-      console.log(`Воспроизведение звука для ${buttonId}, src: ${sound.src}`);
-      sound.volume = currentVolume;
-      sound.currentTime = 0;
-      sound.play()
-        .then(() => console.log(`Звук ${buttonId} успешно воспроизведён`))
-        .catch(error => console.error(`Ошибка воспроизведения ${buttonId}:`, error));
-    } else {
-      console.log(`Звук для ${buttonId} не найден`);
-    }
-  }
-  
-  // Обновление громкости для всех звуков
-  function updateVolume() {
-    Object.values(audioMap).forEach(sound => {
-      sound.volume = currentVolume;
-    });
-  }
-  
-  // Переключение изображения кнопки
-  function toggleButtonImage(button) {
-    const noImageToggle = ["recordButton", "playButton", "pauseButton", "stopButton"];
-    if (noImageToggle.includes(button.id)) return;
-    
-    let currentSrc = button.getAttribute('src');
-    if (currentSrc.includes('_normal')) {
-      button.setAttribute('src', currentSrc.replace('_normal', '_pressed'));
-    } else if (currentSrc.includes('_pressed')) {
-      button.setAttribute('src', currentSrc.replace('_pressed', '_normal'));
-    }
-  }
-  
-  // Очистка группы кнопок: для всех кнопок группы, кроме выбранной,
-  // сбрасываем состояние, меняем изображение, останавливаем интервалы и (для melodyTop) останавливаем звук.
-  function clearGroup(group, exceptButton) {
-    const buttons = document.querySelectorAll(`[data-group="${group}"]`);
-    buttons.forEach(btn => {
-      if (btn !== exceptButton) {
-        btn.classList.remove('pressed');
-        let src = btn.getAttribute('src');
-        if (src.includes('_pressed')) {
-          btn.setAttribute('src', src.replace('_pressed', '_normal'));
-        }
-        btn.style.opacity = '1';
-        if (intervals[btn.id]) {
-          clearInterval(intervals[btn.id]);
-          delete intervals[btn.id];
-        }
-        // Если группа melodyTop – останавливаем воспроизведение звука
-        if (group === "melodyTop" && audioMap[btn.id]) {
-           audioMap[btn.id].pause();
-           audioMap[btn.id].currentTime = 0;
-        }
-      }
-    });
-  }
-  
-  // Запуск интервалов для всех активных (нажатых) кнопок (каждые 4 секунды)
-  // При этом сразу же воспроизводится звук для каждой нажатой кнопки.
-  function startAllIntervals() {
-    const pressedButtons = document.querySelectorAll(
-      '.pressable.pressed:not([id="recordButton"]):not([id="playButton"]):not([id="pauseButton"]):not([id="stopButton"])'
-    );
-    pressedButtons.forEach(button => {
-      if (!intervals[button.id]) {
-        playSound(button.id); // Запускаем звук сразу
-        intervals[button.id] = setInterval(() => {
-          playSound(button.id);
-        }, 4000);
-      }
-    });
-  }
-  
-  // Приостановка всех интервалов и остановка воспроизведения звуков (для кнопки пауза)
-  function pauseAllIntervals() {
-    Object.keys(intervals).forEach(id => {
-      clearInterval(intervals[id]);
-    });
-    // Остановка воспроизведения всех звуков
-    Object.values(audioMap).forEach(sound => {
-      if (!sound.paused) {
-        sound.pause();
-        sound.currentTime = 0;
-      }
-    });
-  }
-  
-  // Остановка всех интервалов и сброс состояния кнопок (для кнопки стоп)
-  function stopAllIntervals() {
-    pauseAllIntervals();
-    const pressedButtons = document.querySelectorAll('.pressable.pressed');
-    pressedButtons.forEach(button => {
-      button.classList.remove('pressed');
-      toggleButtonImage(button);
-      button.style.opacity = '1';
-    });
-    Object.values(audioMap).forEach(sound => {
-      sound.pause();
-      sound.currentTime = 0;
-    });
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
-      console.log("Запись остановлена при нажатии stopButton");
-    }
-    for (let key in intervals) {
-      delete intervals[key];
-    }
-  }
-  
-  // Инициализация записи приложения (запись воспроизводимых звуков без микрофона)
-  function initAudioRecording() {
-    if (!audioContext) {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      destination = audioContext.createMediaStreamDestination();
-      Object.values(audioMap).forEach(audio => {
-        let source = audioContext.createMediaElementSource(audio);
+    kickButton1: null,
+    kickButton2: null,
+    kickButton3: null,
+    melodyButton1: null,
+    melodyButton2: null,
+    melodyButton3: null,
+    melodyTopButton1: null,
+    melodyTopButton2: null,
+    melodyTopButton3: null,
+    thirdButton1: null,
+    thirdButton2: null,
+    thirdButton3: null,
+    fourthButton1: null,
+    fourthButton2: null,
+    fourthButton3: null
+};
+
+const audioPaths = {
+    kickButton1: '/3311/access/sounds/kick1.mp3',
+    kickButton2: '/3311/access/sounds/kick2.mp3',
+    kickButton3: '/3311/access/sounds/kick3.mp3',
+    melodyButton1: '/3311/access/sounds/melody1.mp3',
+    melodyButton2: '/3311/access/sounds/melody2.mp3',
+    melodyButton3: '/3311/access/sounds/melody3.mp3',
+    melodyTopButton1: '/3311/access/sounds/melody1.mp3',
+    melodyTopButton2: '/3311/access/sounds/melody2.mp3',
+    melodyTopButton3: '/3311/access/sounds/melody3.mp3',
+    thirdButton1: '/3311/access/sounds/third1.mp3',
+    thirdButton2: '/3311/access/sounds/third2.mp3',
+    thirdButton3: '/3311/access/sounds/third3.mp3',
+    fourthButton1: '/3311/access/sounds/fourth1.mp3',
+    fourthButton2: '/3311/access/sounds/fourth2.mp3',
+    fourthButton3: '/3311/access/sounds/fourth3.mp3'
+};
+
+// Настройка записи
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const destination = audioContext.createMediaStreamDestination();
+const mediaRecorder = new MediaRecorder(destination.stream);
+let chunks = [];
+const sources = {};
+
+function loadAudio(buttonId) {
+    if (!audioMap[buttonId]) {
+        audioMap[buttonId] = new Audio(audioPaths[buttonId]);
+        audioMap[buttonId].load();
+        audioMap[buttonId].volume = currentVolume;
+        const source = audioContext.createMediaElementSource(audioMap[buttonId]);
         source.connect(destination);
         source.connect(audioContext.destination);
-      });
+        sources[buttonId] = source;
     }
-  }
-  
-  // Запуск записи (записываем звук, воспроизводимый в приложении)
-  function startRecording() {
-    initAudioRecording();
-    recordedChunks = [];
-    mediaRecorder = new MediaRecorder(destination.stream);
-    mediaRecorder.ondataavailable = event => {
-      if (event.data.size > 0) {
-        recordedChunks.push(event.data);
-      }
-    };
-    mediaRecorder.onstop = saveRecording;
-    mediaRecorder.start();
-    console.log('Запись приложения началась');
-  }
-  
-  // Остановка записи
-  function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
-      console.log('Запись приложения остановлена');
+}
+
+mediaRecorder.ondataavailable = function(e) {
+    chunks.push(e.data);
+};
+
+mediaRecorder.onstop = function() {
+    const blob = new Blob(chunks, { type: 'audio/wav' });
+    chunks = [];
+    sendAudioToUser(blob);
+};
+
+// Отправка в Telegram
+function sendAudioToUser(blob) {
+    const chatId = window.Telegram.WebApp.initDataUnsafe.user.id;
+    const botToken = 'YOUR_BOT_TOKEN_HERE'; // Замените на ваш токен
+
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+    formData.append('audio', blob, 'recording.wav');
+
+    fetch(`https://api.telegram.org/bot${botToken}/sendAudio`, {
+        method: 'POST',
+        body: formData
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.ok) {
+                console.log('Audio sent!');
+                Telegram.WebApp.showAlert('Recording sent!');
+            } else {
+                console.error('Error:', data);
+                Telegram.WebApp.showAlert('Error sending recording');
+            }
+        })
+        .catch(error => {
+            console.error('Fetch error:', error);
+            Telegram.WebApp.showAlert('Error sending recording');
+        });
+}
+
+// Управление глобальным таймером
+function startGlobalTimer() {
+    if (!isPlaying) {
+        isPlaying = true;
+        globalTimer = setInterval(() => {
+            playActiveSounds();
+        }, loopDuration);
     }
-  }
-  
-  // Сохранение записи
-  function saveRecording() {
-    const blob = new Blob(recordedChunks, { type: 'audio/wav' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'recording.wav';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-  
-  // Обработчик клика по кнопке
-  function buttonClickHandler(event) {
-    const button = event.currentTarget;
-    const controlButtons = ["recordButton", "playButton", "pauseButton", "stopButton"];
-    
-    console.log(`Клик по кнопке ${button.id}`);
-    
-    if (controlButtons.includes(button.id)) {
-      if (button.id === "recordButton") {
-        button.classList.toggle('pressed');
-        button.style.opacity = button.classList.contains('pressed') ? '0.7' : '1';
-        if (button.classList.contains('pressed')) {
-          startRecording();
-        } else {
-          stopRecording();
+}
+
+function stopGlobalTimer() {
+    if (isPlaying) {
+        isPlaying = false;
+        clearInterval(globalTimer);
+        globalTimer = null;
+    }
+}
+
+function playActiveSounds() {
+    Object.keys(activeSounds).forEach(buttonId => {
+        if (activeSounds[buttonId]) {
+            const sound = audioMap[buttonId];
+            if (sound) {
+                sound.currentTime = 0;
+                sound.play().catch(error => console.error(`Error playing ${buttonId}:`, error));
+            }
         }
-      } else if (button.id === "playButton") {
-        // При нажатии "плей" возобновляем воспроизведение для всех активных кнопок
-        startAllIntervals();
-      } else if (button.id === "pauseButton") {
-        pauseAllIntervals();
-      } else if (button.id === "stopButton") {
-        stopAllIntervals();
-      }
-      setTimeout(() => {
-        button.style.opacity = button.classList.contains('pressed') ? '0.7' : '1';
-      }, 100);
-      return;
+    });
+}
+
+// Переключение изображений
+function toggleButtonImage(button) {
+    const isPressed = button.classList.contains('pressed');
+    const baseSrc = button.src.split('_')[0];
+    button.src = isPressed ? `${baseSrc}_pressed.png` : `${baseSrc}_normal.png`;
+}
+
+// Плавное затухание
+function fadeOutSound(sound, duration = 500) {
+    if (!sound) return;
+    let volume = sound.volume;
+    const step = volume / (duration / 50);
+    const fadeInterval = setInterval(() => {
+        volume -= step;
+        if (volume <= 0) {
+            sound.pause();
+            sound.currentTime = 0;
+            sound.volume = currentVolume;
+            clearInterval(fadeInterval);
+        } else {
+            sound.volume = volume;
+        }
+    }, 50);
+}
+
+// Обновление громкости
+function updateVolume() {
+    Object.values(audioMap).forEach(sound => {
+        if (sound) sound.volume = currentVolume;
+    });
+}
+
+// Обработчик клика
+function buttonClickHandler(event) {
+    const button = event.currentTarget;
+    const buttonId = button.id;
+
+    const controlButtons = ["recordButton", "playButton", "stopButton"];
+    if (controlButtons.includes(buttonId)) {
+        if (buttonId === "recordButton") {
+            button.classList.toggle('pressed');
+            if (button.classList.contains('pressed')) {
+                mediaRecorder.start();
+                console.log("Recording started");
+            } else {
+                mediaRecorder.stop();
+                console.log("Recording stopped");
+            }
+        } else if (buttonId === "playButton") {
+            startGlobalTimer();
+        } else if (buttonId === "stopButton") {
+            stopGlobalTimer();
+            Object.keys(activeSounds).forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.classList.remove('pressed');
+                    toggleButtonImage(btn);
+                }
+                activeSounds[id] = false;
+                const sound = audioMap[id];
+                if (sound) fadeOutSound(sound);
+            });
+            if (mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                const recordBtn = document.getElementById('recordButton');
+                if (recordBtn) {
+                    recordBtn.classList.remove('pressed');
+                    toggleButtonImage(recordBtn);
+                }
+            }
+        }
+        return;
     }
-    
-    // Если кнопка принадлежит группе, сбрасываем состояние остальных в этой группе
-    const group = button.getAttribute('data-group');
-    if (group) {
-      clearGroup(group, button);
-    }
-    
+
     button.classList.toggle('pressed');
     toggleButtonImage(button);
-    button.style.opacity = button.classList.contains('pressed') ? '0.7' : '1';
-    
-    if (button.classList.contains('pressed')) {
-      playSound(button.id);
-      intervals[button.id] = setInterval(() => {
-        playSound(button.id);
-      }, 4000);
-    } else {
-      if (intervals[button.id]) {
-        clearInterval(intervals[button.id]);
-        delete intervals[button.id];
-      }
+    activeSounds[buttonId] = button.classList.contains('pressed');
+
+    if (!isPlaying && activeSounds[buttonId]) {
+        startGlobalTimer();
     }
-  }
-  
-  // Инициализация приложения
-  document.addEventListener('DOMContentLoaded', function() {
+
+    if (!Object.values(activeSounds).some(state => state)) {
+        stopGlobalTimer();
+    }
+
+    if (activeSounds[buttonId]) {
+        loadAudio(buttonId);
+        const sound = audioMap[buttonId];
+        if (sound) {
+            sound.currentTime = 0;
+            sound.play().catch(error => console.error(`Error playing ${buttonId}:`, error));
+        }
+    } else {
+        const sound = audioMap[buttonId];
+        fadeOutSound(sound);
+    }
+}
+
+// Инициализация
+document.addEventListener('DOMContentLoaded', function() {
     const buttons = document.querySelectorAll('.pressable');
     buttons.forEach(button => {
-      if (button.id) {
-        button.addEventListener('click', buttonClickHandler);
-      }
+        if (button.id) {
+            button.addEventListener('click', buttonClickHandler);
+        }
     });
-    
+
     const volumeSlider = document.getElementById('volumeSlider');
     if (volumeSlider) {
-      volumeSlider.addEventListener('input', function() {
-        currentVolume = volumeSlider.value / 100;
-        updateVolume();
-        console.log(`Громкость изменена на ${currentVolume}`);
-      });
+        volumeSlider.addEventListener(' cafeteria', function() {
+            currentVolume = this.value / 100;
+            updateVolume();
+        });
     }
-  });
-  
+
+    if (window.Telegram && window.Telegram.WebApp) {
+        console.log("Telegram Web App SDK loaded!");
+        Telegram.WebApp.ready();
+        Telegram.WebApp.expand();
+        const user = Telegram.WebApp.initDataUnsafe.user;
+        if (user) {
+            console.log("User:", user.first_name, user.id);
+        }
+    }
+});

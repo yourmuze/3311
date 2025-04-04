@@ -1,0 +1,49 @@
+/* style.css */
+
+/* Основные стили для тела страницы */
+body {
+    background-color: #f0f0f0;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+/* Контейнер для кнопок */
+.container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 15px;
+    padding: 20px;
+}
+
+/* Стили для кнопок */
+.pressable {
+    cursor: pointer;
+    width: 100px;
+    height: 100px;
+    transition: opacity 0.2s ease-in-out;
+}
+
+/* Стили для нажатых кнопок */
+.pressable.pressed {
+    opacity: 0.7;
+    animation: pulse 2s infinite; /* Пульсация каждые 2 секунды */
+}
+
+/* Анимация пульсации */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+/* Стили для слайдера громкости */
+#volumeSlider {
+    width: 100px;
+    margin: 20px;
+}
