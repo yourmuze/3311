@@ -79,7 +79,7 @@ mediaRecorder.onstop = function() {
 // Отправка в Telegram
 function sendAudioToUser(blob) {
     const chatId = window.Telegram.WebApp.initDataUnsafe.user.id;
-    const botToken = 'YOUR_BOT_TOKEN_HERE'; // Замените на ваш токен
+    const botToken = '8053491578:AAGSIrd3qdvzGh-ZU4SmTJjsKOMHmcKNr3c'; // Замените на ваш токен
 
     const formData = new FormData();
     formData.append('chat_id', chatId);
