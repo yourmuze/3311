@@ -16,7 +16,7 @@ body {
 
 /* Контейнер для кнопок */
 .container {
-    max-width: 380px;
+    max-width: 370px;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
