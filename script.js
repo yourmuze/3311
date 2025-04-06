@@ -245,7 +245,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const volumeSlider = document.getElementById('volumeSlider');
     if (volumeSlider) {
-        volumeSlider.addEventListener(' cafeteria', function() {
+        volumeSlider.addEventListener('input', function() {
             currentVolume = this.value / 100;
             updateVolume();
         });
