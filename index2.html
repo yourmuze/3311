@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/3311/">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music App</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="preload" href="/access/sounds/kick1.mp3" as="audio">
+    <link rel="preload" href="/access/p/kick_button1_normal.png" as="image">
+    <script src="https://telegram.org/js/telegram-web-app.js" async></script>
+    <center>
+  <div><img src="/access/p/Top_panel.png" class="containertop"></div>
+    </center>
+  
+</head>
+<body>
+
+<center>
+        <div class="container">
+        <!-- Кнопки для звуков -->
+         <img src="/access/p/melodyTopButton1_normal.png" id="melodyTopButton" class="pressable" loading="lazy">
+        <img src="/access/p/melodyTopButton2_normal.png" id="melodyTopButton" class="pressable" loading="lazy">
+        <img src="/access/p/melodyTopButton3_normal.png" id="melodyTopButton" class="pressable" loading="lazy">
+        <img src="/access/p/kick_button1_normal.png" id="kickButton" class="pressable" loading="lazy">
+        <img src="/access/p/kick_button2_normal.png" id="kickButton" class="pressable" loading="lazy">
+        <img src="/access/p/kick_button3_normal.png" id="kickButton" class="pressable" loading="lazy">
+        <img src="/access/p/melody_button1_normal.png" id="melodyButton" class="pressable" loading="lazy">
+        <img src="/access/p/melody_button2_normal.png" id="melodyButton" class="pressable" loading="lazy">
+        <img src="/access/p/melody_button3_normal.png" id="melodyButton" class="pressable" loading="lazy">
+        <img src="/access/p/third_button1_normal.png" id="thirdButton" class="pressable" loading="lazy">
+        <img src="/access/p/third_button2_normal.png" id="thirdButton" class="pressable" loading="lazy">
+        <img src="/access/p/third_button3_normal.png" id="thirdButton" class="pressable" loading="lazy">
+        <img src="/access/p/fourth_button1_normal.png" id="fourthButton" class="pressable" loading="lazy">
+        <img src="/access/p/fourth_button2_normal.png" id="fourthButton" class="pressable" loading="lazy">
+        <img src="/access/p/fourth_button3_normal.png" id="fourthButton" class="pressable" loading="lazy">
+
+        
+    </div>
+
+    <div class="containerdown">
+        <!-- Управляющие кнопки -->
+         <img src="/access/p/record_button_normal.png" id="recordButton" class="pressable">
+
+         <!-- Слайдер громкости -->
+        <input type="range" id="volumeSlider" min="0" max="100" value="100">
+
+
+
+        <img src="/access/p/play_button_normal.png" id="downButton" class="pressable"><img src="/access/p/stop_button_normal.png" id="downButton" class="pressable"><img src="/access/p/pause_button_normal.png" id="downButton" class="pressable">
+              
+    </div>
+
+</center>
+
+    <script src="/script.js"></script>
+</body>
+</html>

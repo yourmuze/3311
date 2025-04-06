@@ -1,0 +1,122 @@
+/* style.css */
+
+
+/* Основные стили для тела страницы */
+body {
+    background-color: #f0f0f0;
+    
+}
+
+
+.containertop {
+    position: relative;
+    width: 375px;
+    height: auto;
+}
+
+/* Контейнер для кнопок */
+.container {
+    max-width: 380px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    background-color: #d3d3d3;
+    border-top: 4px solid black;
+    border-right: 4px solid black;
+    border-left: 4px solid black;
+    border-bottom: 2px solid black;
+    border-top-right-radius: 10px;
+    border-top-left-radius: 10px;
+}
+
+.containerdown {   
+    background-color: #d3d3d3;
+    position: relative;
+    width: 370px;
+    height: 160px;
+    border-top: 2px solid black;
+    border-right: 4px solid black;
+    border-left: 4px solid black;
+    border-bottom: 4px solid black;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+}
+
+
+
+/* Стили для кнопок */
+.pressable {
+    cursor: pointer;
+    width: 100px;
+    height: 100px;
+    transition: opacity 0.2s ease-in-out;
+}
+
+#melodyTopButton {
+    margin-top: 10px;
+    width: 115px;
+    height: 50px;
+}
+
+#kickButton {
+    width: 115px;
+    margin-top: 15px;
+    height: 85px;
+}
+#melodyButton {
+    width: 115px;
+    height: 85px;
+}
+#thirdButton {
+    width: 115px;
+    height: 85px;
+}
+#fourthButton {
+    width: 115px;
+    height: 85px;
+}
+
+#recordButton {
+    margin-top: 10px;
+    height: 50px;
+    width: 350px;
+}
+
+/* Стили для слайдера громкости */
+#volumeSlider {
+    display: block;
+    width: 100px;
+    margin-top: 10px;
+}
+
+#downButton {
+    position: relative;
+    width: 110px;
+    height: 60px;
+}
+
+
+
+/* Стили для нажатых кнопок */
+.pressable.pressed {
+    opacity: 0.7;
+    animation: pulse 2s infinite;
+    /* Пульсация каждые 2 секунды */
+}
+
+/* Анимация пульсации */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+
