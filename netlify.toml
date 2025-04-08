@@ -1,9 +1,7 @@
 [build]
   publish = "."  # Папка для публикации (корень проекта)
   functions = "netlify/functions"  # Папка с функциями
-  command = "npm install"
-  functions = "netlify/functions"
-  environment = { NODE_VERSION = "18" }
+ 
 
 [functions]
   node_bundler = "esbuild"  # Используем esbuild для бандлинга функций
