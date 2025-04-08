@@ -2,7 +2,8 @@
     "name": "audio-app",
     "version": "1.0.0",
     "dependencies": {
-      "node-fetch": "^2.6.1",
-      "formidable": "^3.5.1"
+        "busboy": "^1.6.0",
+        "formidable": "^3.5.1",
+        "node-fetch": "^2.6.1"
     }
-  }
+}
