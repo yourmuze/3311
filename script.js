@@ -1,3 +1,5 @@
+import { Mp3Encoder } from 'lamejs';
+
 const appState = {
   isPlaying: false,
   isPaused: false,
@@ -106,38 +108,52 @@ mediaRecorder.ondataavailable = (event) => {
 };
 
 mediaRecorder.onstop = async () => {
-  const blob = new Blob(chunks, { type: 'audio/wav' }); // Оставляем WAV
-  chunks = [];
-  console.log('Запись завершена. Размер Blob:', blob.size);
-
-  const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || '123456789';
-  console.log('Chat ID:', chatId);
-  if (!chatId) {
-    alert('Ошибка: войдите через Telegram!');
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('audio', blob, 'recording.wav'); // Имя файла с .wav
-  formData.append('chat_id', chatId);
-
   try {
+    // 1. Создаем WebM blob
+    const webmBlob = new Blob(chunks, { type: 'audio/webm; codecs=opus' });
+    chunks = [];
+    
+    // 2. Конвертируем в MP3
+    const audioContext = new AudioContext();
+    const arrayBuffer = await webmBlob.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    
+    const encoder = new Mp3Encoder(1, 44100, 128); // 1 канал, 44.1kHz, 128kbps
+    const samples = audioBuffer.getChannelData(0); // Берем первый канал
+    const mp3Data = encoder.encodeBuffer(samples); // Кодируем в MP3
+    encoder.flush(); // Завершаем кодирование
+    
+    const mp3Blob = new Blob([mp3Data], { type: 'audio/mpeg' });
+
+    // 3. Проверка размера
+    if (mp3Blob.size === 0) {
+      alert('Ошибка: пустой файл после конвертации!');
+      return;
+    }
+
+    // 4. Отправка на сервер
+    const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id;
+    const formData = new FormData();
+    formData.append('audio', mp3Blob, 'recording.mp3');
+    formData.append('chat_id', chatId);
+
     const response = await fetch('/api/send-audio', {
       method: 'POST',
       body: formData,
     });
-    const text = await response.text();
-    console.log('Ответ сервера:', response.status, text);
 
-    if (response.ok) {
-      alert('🎧 Аудио отправлено! Проверьте чат с ботом.');
+    const result = await response.json();
+    console.log('Ответ сервера:', result);
+
+    if (result.ok) {
+      alert('✅ Аудио отправлено!');
     } else {
-      console.error('Ошибка сервера:', response.status, text);
-      alert(`Ошибка отправки: ${text}`);
+      alert(`❌ Ошибка: ${result.description}`);
     }
+
   } catch (error) {
-    console.error('Ошибка соединения:', error.message);
-    alert(`Сбой сети: ${error.message}`);
+    console.error('Ошибка:', error);
+    alert('Сбой: ' + error.message);
   }
 };
 

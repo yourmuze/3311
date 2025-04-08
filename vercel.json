@@ -1,12 +1,17 @@
 {
-    "rewrites": [
-      {
-        "source": "/api/send-audio",
-        "destination": "/api/send-audio.js"
-      },
-      {
-        "source": "/(.*)",
-        "destination": "/index.html"
-      }
-    ]
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "POST" }
+      ]
+    }
+  ],
+  "functions": {
+    "api/send-audio.js": {
+      "memory": 3008,
+      "maxDuration": 30
+    }
   }
+}
