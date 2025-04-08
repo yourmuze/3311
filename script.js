@@ -1,5 +1,3 @@
-import { Mp3Encoder } from 'lamejs';
-
 const appState = {
   isPlaying: false,
   isPaused: false,
@@ -15,12 +13,17 @@ const appState = {
   lastSoundTime: 0,
 };
 
+// Инициализация аудио контекста
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const destination = audioContext.createMediaStreamDestination();
-const mediaRecorder = new MediaRecorder(destination.stream);
+const mediaRecorder = new MediaRecorder(destination.stream, {
+  mimeType: 'audio/webm; codecs=opus'
+});
+
 let audioCache = new Map();
 let chunks = [];
 
+// Пути к звукам
 const soundPaths = {
   kick: ['access/sounds/kick1.mp3', 'access/sounds/kick2.mp3', 'access/sounds/kick3.mp3'],
   melody: ['access/sounds/melody1.mp3', 'access/sounds/melody2.mp3', 'access/sounds/melody3.mp3'],
@@ -29,6 +32,7 @@ const soundPaths = {
   fourth: ['access/sounds/fourth1.mp3', 'access/sounds/fourth2.mp3', 'access/sounds/fourth3.mp3'],
 };
 
+// Функция загрузки звуков
 async function loadSound(src) {
   if (!audioCache.has(src)) {
     try {
@@ -52,6 +56,7 @@ async function loadSound(src) {
   return audioCache.get(src);
 }
 
+// Функции управления аудио
 function playSound(audioObj, loop = false, resetTime = true) {
   const { audio, gainNode } = audioObj;
   if (resetTime) audio.currentTime = 0;
@@ -70,6 +75,7 @@ function stopSound(audioObj) {
   audio.currentTime = 0;
 }
 
+// Визуальные функции
 function toggleButtonImage(button, isPressed) {
   const baseSrc = button.dataset.baseSrc;
   button.src = isPressed ? `${baseSrc}_pressed.png` : `${baseSrc}_normal.png`;
@@ -98,12 +104,11 @@ function updateBeatTrack(timestamp) {
   requestAnimationFrame(updateBeatTrack);
 }
 
+// Обработчики записи
 mediaRecorder.ondataavailable = (event) => {
   if (event.data.size > 0) {
     chunks.push(event.data);
-    console.log('Данные записи добавлены в chunks, размер:', event.data.size);
-  } else {
-    console.log('Получены пустые данные от mediaRecorder');
+    console.log('Данные записи добавлены, размер:', event.data.size);
   }
 };
 
@@ -113,26 +118,29 @@ mediaRecorder.onstop = async () => {
     const webmBlob = new Blob(chunks, { type: 'audio/webm; codecs=opus' });
     chunks = [];
     
-    // 2. Конвертируем в MP3
-    const audioContext = new AudioContext();
+    // 2. Конвертируем в MP3 через lamejs
     const arrayBuffer = await webmBlob.arrayBuffer();
+    const audioContext = new AudioContext();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     
-    const encoder = new Mp3Encoder(1, 44100, 128); // 1 канал, 44.1kHz, 128kbps
-    const samples = audioBuffer.getChannelData(0); // Берем первый канал
-    const mp3Data = encoder.encodeBuffer(samples); // Кодируем в MP3
-    encoder.flush(); // Завершаем кодирование
+    const encoder = new lamejs.Mp3Encoder(1, 44100, 128); // 1 канал, 44.1kHz, 128kbps
+    const samples = audioBuffer.getChannelData(0);
+    const mp3Data = encoder.encodeBuffer(samples);
+    encoder.flush();
     
     const mp3Blob = new Blob([mp3Data], { type: 'audio/mpeg' });
 
     // 3. Проверка размера
     if (mp3Blob.size === 0) {
-      alert('Ошибка: пустой файл после конвертации!');
-      return;
+      throw new Error('Получен пустой MP3 файл после конвертации');
     }
 
     // 4. Отправка на сервер
     const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id;
+    if (!chatId) {
+      throw new Error('Не удалось получить chat_id');
+    }
+
     const formData = new FormData();
     formData.append('audio', mp3Blob, 'recording.mp3');
     formData.append('chat_id', chatId);
@@ -146,20 +154,23 @@ mediaRecorder.onstop = async () => {
     console.log('Ответ сервера:', result);
 
     if (result.ok) {
-      alert('✅ Аудио отправлено!');
+      alert('✅ Аудио успешно отправлено!');
     } else {
-      alert(`❌ Ошибка: ${result.description}`);
+      throw new Error(result.description || 'Неизвестная ошибка сервера');
     }
 
   } catch (error) {
     console.error('Ошибка:', error);
-    alert('Сбой: ' + error.message);
+    alert(`❌ Ошибка: ${error.message}`);
   }
 };
 
+// Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
+  // Разблокировка аудио контекста
   document.addEventListener('click', () => audioContext.resume(), { once: true });
 
+  // Получаем элементы интерфейса
   const soundButtons = document.querySelectorAll('.container .pressable:not([id^="melodyTopButton"])');
   const melodyTopButtons = document.querySelectorAll('.pressable[id^="melodyTopButton"]');
   const beatTrackElement = document.getElementById('beatTrack');
@@ -170,11 +181,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const playButton = document.getElementById('playButton');
   const recordButton = document.getElementById('recordButton');
 
+  // Обработчики кнопок
   cassette.addEventListener('click', () => {
     appState.isRecording = !appState.isRecording;
     cassetteContainer.classList.toggle('recording', appState.isRecording);
-    if (appState.isRecording) mediaRecorder.start();
-    else mediaRecorder.stop();
+    if (appState.isRecording) {
+      chunks = []; // Очищаем предыдущие данные
+      mediaRecorder.start();
+    } else {
+      mediaRecorder.stop();
+    }
   });
 
   recordButton.addEventListener('click', () => {
