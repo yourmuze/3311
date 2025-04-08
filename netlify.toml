@@ -1,7 +1,0 @@
-[build]
-  publish = "."  # Папка для публикации (корень проекта)
-  functions = "netlify/functions"  # Папка с функциями
- 
-
-[functions]
-  node_bundler = "esbuild"  # Используем esbuild для бандлинга функций
