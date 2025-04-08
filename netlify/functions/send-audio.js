@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const Busboy = require('busboy');
 const BOT_TOKEN = '8053491578:AAGSIrd3qdvzGh-ZU4SmTJjsKOMHmcKNr3c';
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
@@ -7,7 +8,6 @@ exports.handler = async (event) => {
   console.log('Event:', event);
 
   try {
-    // Проверяем Content-Type
     const contentType = event.headers['content-type'];
     console.log('Content-Type:', contentType);
     if (!contentType || !contentType.includes('multipart/form-data')) {
@@ -19,55 +19,54 @@ exports.handler = async (event) => {
       };
     }
 
-    // Декодируем тело запроса из base64
     const bodyBuffer = Buffer.from(event.body, 'base64');
-    const boundary = `--${contentType.split('boundary=')[1]}`;
-    
-    // Разделяем тело на части по границе
-    const parts = bodyBuffer.toString('binary').split(boundary);
-    let chatId, audioBuffer;
+    const busboy = Busboy({ headers: { 'content-type': contentType } });
 
-    for (let part of parts) {
-      if (!part || part.trim() === '--') continue; // Пропускаем пустые части
+    let chatId;
+    const audioChunks = [];
 
-      // Ищем chat_id
-      if (part.includes('name="chat_id"')) {
-        const match = part.match(/name="chat_id"\r\n\r\n(.+?)\r\n/);
-        if (match) {
-          chatId = match[1].trim();
-          console.log('Chat ID:', chatId);
-        }
+    // Обрабатываем поля
+    busboy.on('field', (name, value) => {
+      if (name === 'chat_id') {
+        chatId = value;
+        console.log('Chat ID:', chatId);
       }
+    });
 
-      // Ищем audio
-      if (part.includes('name="audio"')) {
-        // Извлекаем заголовки и тело
-        const lines = part.split('\r\n');
-        let dataStartIndex = -1;
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i] === '') {
-            dataStartIndex = i + 1;
-            break;
-          }
-        }
+    // Обрабатываем файл
+    busboy.on('file', (name, file, info) => {
+      if (name === 'audio') {
+        console.log('Обнаружен файл:', info);
+        file.on('data', (data) => {
+          audioChunks.push(data);
+        });
+        file.on('end', () => {
+          console.log('Файл полностью получен');
+        });
+      }
+    });
 
-        if (dataStartIndex === -1) {
-          console.log('Не удалось найти начало данных файла');
-          continue;
-        }
-
-        // Извлекаем двоичные данные файла
-        const rawDataLines = lines.slice(dataStartIndex).join('\r\n');
-        const dataEndIndex = rawDataLines.lastIndexOf('\r\n--');
-        const rawData = dataEndIndex !== -1 ? rawDataLines.substring(0, dataEndIndex) : rawDataLines;
-
-        // Преобразуем в Buffer
-        audioBuffer = Buffer.from(rawData, 'binary');
+    // Ожидаем завершения парсинга
+    const parsePromise = new Promise((resolve, reject) => {
+      busboy.on('finish', () => {
+        const audioBuffer = Buffer.concat(audioChunks);
         console.log('Размер аудиофайла:', audioBuffer.length);
-      }
-    }
+        console.log('Первые 10 байт аудиофайла:', audioBuffer.slice(0, 10).toString('hex'));
+        resolve({ chatId, audioBuffer });
+      });
+      busboy.on('error', (error) => {
+        console.error('Ошибка парсинга busboy:', error);
+        reject(error);
+      });
+    });
 
-    if (!chatId) {
+    // Передаём bodyBuffer в busboy
+    busboy.end(bodyBuffer);
+
+    // Ждём завершения парсинга
+    const { chatId: parsedChatId, audioBuffer } = await parsePromise;
+
+    if (!parsedChatId) {
       console.log('chat_id отсутствует');
       return {
         statusCode: 400,
@@ -85,7 +84,7 @@ exports.handler = async (event) => {
     }
 
     const formData = new FormData();
-    formData.append('chat_id', chatId);
+    formData.append('chat_id', parsedChatId);
     formData.append('audio', audioBuffer, 'recording.mp3');
 
     console.log('Отправка в Telegram API...');
