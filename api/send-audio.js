@@ -36,6 +36,7 @@ export default async (req, res) => {
     );
 
     const result = await response.json();
+    console.log('Ответ Telegram API:', result); // Добавьте эту строку
     res.status(200).json(result);
 
   } catch (error) {
