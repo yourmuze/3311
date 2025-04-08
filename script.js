@@ -96,15 +96,14 @@ function updateBeatTrack(timestamp) {
   requestAnimationFrame(updateBeatTrack);
 }
 
-mediaRecorder.ondataavailable = e => chunks.push(e.data);
 mediaRecorder.onstop = async () => {
   const blob = new Blob(chunks, { type: 'audio/wav' });
   chunks = [];
+  console.log('Размер Blob:', blob.size);
 
-  // Получаем chat_id из Telegram Web App
-  const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || 'DEFAULT_CHAT_ID'; // Замени DEFAULT_CHAT_ID для тестов
+  const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || '123456789'; // Твой ID
+  console.log('Chat ID:', chatId);
 
-  // Отправляем файл на внутренний API Vercel
   const formData = new FormData();
   formData.append('audio', blob, 'recording.wav');
   formData.append('chat_id', chatId);
@@ -114,16 +113,27 @@ mediaRecorder.onstop = async () => {
       method: 'POST',
       body: formData,
     });
+    const text = await response.text();
+    console.log('Ответ сервера:', response.status, text);
+
     if (response.ok) {
-      console.log('Мелодия отправлена боту');
-      window.Telegram.WebApp.showAlert('Мелодия отправлена в чат!');
+      // Используем showPopup вместо showAlert
+      window.Telegram.WebApp.showPopup({
+        message: 'Мелодия отправлена в чат!',
+        buttons: [{ type: 'ok' }],
+      });
     } else {
-      console.error('Ошибка сервера:', response.statusText);
-      window.Telegram.WebApp.showAlert('Ошибка при отправке мелодии');
+      window.Telegram.WebApp.showPopup({
+        message: `Ошибка при отправке: ${text}`,
+        buttons: [{ type: 'ok' }],
+      });
     }
   } catch (error) {
-    console.error('Ошибка:', error);
-    window.Telegram.WebApp.showAlert('Ошибка соединения');
+    console.error('Ошибка соединения:', error.message);
+    window.Telegram.WebApp.showPopup({
+      message: `Ошибка соединения: ${error.message}`,
+      buttons: [{ type: 'ok' }],
+    });
   }
 };
 
