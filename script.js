@@ -97,43 +97,31 @@ function updateBeatTrack(timestamp) {
 }
 
 mediaRecorder.onstop = async () => {
-  const blob = new Blob(chunks, { type: 'audio/wav' });
+  const blob = new Blob(chunks, { type: 'audio/webm' });
   chunks = [];
-  console.log('Размер Blob:', blob.size);
+  
+  // Получаем chat_id пользователя
+  const chatId = Telegram.WebApp.initDataUnsafe.user?.id;
+  if (!chatId) {
+    alert('Ошибка: войдите через Telegram!');
+    return;
+  }
 
-  const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || '123456789'; // Твой ID
-  console.log('Chat ID:', chatId);
-
-  const formData = new FormData();
-  formData.append('audio', blob, 'recording.wav');
-  formData.append('chat_id', chatId);
-
+  // Отправляем аудио на сервер
   try {
     const response = await fetch('/api/send-audio', {
       method: 'POST',
-      body: formData,
+      headers: { 'chat-id': chatId },
+      body: blob,
     });
-    const text = await response.text();
-    console.log('Ответ сервера:', response.status, text);
 
     if (response.ok) {
-      // Используем showPopup вместо showAlert
-      window.Telegram.WebApp.showPopup({
-        message: 'Мелодия отправлена в чат!',
-        buttons: [{ type: 'ok' }],
-      });
+      alert('🎧 Аудио отправлено! Проверьте чат с ботом.');
     } else {
-      window.Telegram.WebApp.showPopup({
-        message: `Ошибка при отправке: ${text}`,
-        buttons: [{ type: 'ok' }],
-      });
+      alert('Ошибка отправки :(');
     }
   } catch (error) {
-    console.error('Ошибка соединения:', error.message);
-    window.Telegram.WebApp.showPopup({
-      message: `Ошибка соединения: ${error.message}`,
-      buttons: [{ type: 'ok' }],
-    });
+    alert('Сбой сети: ' + error.message);
   }
 };
 
