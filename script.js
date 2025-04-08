@@ -13,17 +13,12 @@ const appState = {
   lastSoundTime: 0,
 };
 
-// Инициализация аудио контекста
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const destination = audioContext.createMediaStreamDestination();
-const mediaRecorder = new MediaRecorder(destination.stream, {
-  mimeType: 'audio/webm; codecs=opus'
-});
-
+const mediaRecorder = new MediaRecorder(destination.stream);
 let audioCache = new Map();
 let chunks = [];
 
-// Пути к звукам
 const soundPaths = {
   kick: ['access/sounds/kick1.mp3', 'access/sounds/kick2.mp3', 'access/sounds/kick3.mp3'],
   melody: ['access/sounds/melody1.mp3', 'access/sounds/melody2.mp3', 'access/sounds/melody3.mp3'],
@@ -32,7 +27,6 @@ const soundPaths = {
   fourth: ['access/sounds/fourth1.mp3', 'access/sounds/fourth2.mp3', 'access/sounds/fourth3.mp3'],
 };
 
-// Функция загрузки звуков
 async function loadSound(src) {
   if (!audioCache.has(src)) {
     try {
@@ -56,7 +50,6 @@ async function loadSound(src) {
   return audioCache.get(src);
 }
 
-// Функции управления аудио
 function playSound(audioObj, loop = false, resetTime = true) {
   const { audio, gainNode } = audioObj;
   if (resetTime) audio.currentTime = 0;
@@ -75,7 +68,6 @@ function stopSound(audioObj) {
   audio.currentTime = 0;
 }
 
-// Визуальные функции
 function toggleButtonImage(button, isPressed) {
   const baseSrc = button.dataset.baseSrc;
   button.src = isPressed ? `${baseSrc}_pressed.png` : `${baseSrc}_normal.png`;
@@ -104,73 +96,69 @@ function updateBeatTrack(timestamp) {
   requestAnimationFrame(updateBeatTrack);
 }
 
-// Обработчики записи
 mediaRecorder.ondataavailable = (event) => {
   if (event.data.size > 0) {
     chunks.push(event.data);
-    console.log('Данные записи добавлены, размер:', event.data.size);
+    console.log('Данные записи добавлены в chunks, размер:', event.data.size);
+  } else {
+    console.log('Получены пустые данные от mediaRecorder');
   }
 };
 
 mediaRecorder.onstop = async () => {
+  // Создаём WAV Blob из записанных данных
+  const wavBlob = new Blob(chunks, { type: 'audio/wav' });
+  chunks = [];
+  console.log('Запись завершена. Размер WAV Blob:', wavBlob.size);
+
+  // Конвертируем WAV в MP3 с помощью lamejs
   try {
-    // 1. Создаем WebM blob
-    const webmBlob = new Blob(chunks, { type: 'audio/webm; codecs=opus' });
-    chunks = [];
-    
-    // 2. Конвертируем в MP3 через lamejs
-    const arrayBuffer = await webmBlob.arrayBuffer();
-    const audioContext = new AudioContext();
+    const arrayBuffer = await wavBlob.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    
-    const encoder = new lamejs.Mp3Encoder(1, 44100, 128); // 1 канал, 44.1kHz, 128kbps
-    const samples = audioBuffer.getChannelData(0);
-    const mp3Data = encoder.encodeBuffer(samples);
-    encoder.flush();
-    
-    const mp3Blob = new Blob([mp3Data], { type: 'audio/mpeg' });
+    const channelData = audioBuffer.getChannelData(0); // Моно (берём первый канал)
+    const mp3encoder = new lamejs.Mp3Encoder(1, audioBuffer.sampleRate, 128); // 1 канал, 128 kbps
+    const mp3Data = mp3encoder.encodeBuffer(Float32Array.from(channelData).map(x => x * 32767)); // Конвертируем в 16-bit PCM
+    const mp3Blob = new Blob([mp3Data, mp3encoder.flush()], { type: 'audio/mp3' });
+    console.log('Конвертация завершена. Размер MP3 Blob:', mp3Blob.size);
 
-    // 3. Проверка размера
-    if (mp3Blob.size === 0) {
-      throw new Error('Получен пустой MP3 файл после конвертации');
-    }
-
-    // 4. Отправка на сервер
-    const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id;
+    const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || '123456789';
+    console.log('Chat ID:', chatId);
     if (!chatId) {
-      throw new Error('Не удалось получить chat_id');
+      alert('Ошибка: войдите через Telegram!');
+      return;
     }
 
     const formData = new FormData();
-    formData.append('audio', mp3Blob, 'recording.mp3');
+    formData.append('audio', mp3Blob, 'recording.mp3'); // Отправляем как MP3
     formData.append('chat_id', chatId);
 
-    const response = await fetch('/api/send-audio', {
-      method: 'POST',
-      body: formData,
-    });
+    try {
+      const response = await fetch('/api/send-audio', {
+        method: 'POST',
+        body: formData,
+      });
+      const text = await response.text();
+      console.log('Ответ сервера:', response.status, text);
 
-    const result = await response.json();
-    console.log('Ответ сервера:', result);
-
-    if (result.ok) {
-      alert('✅ Аудио успешно отправлено!');
-    } else {
-      throw new Error(result.description || 'Неизвестная ошибка сервера');
+      if (response.ok) {
+        alert('🎧 Аудио отправлено! Проверьте чат с ботом.');
+      } else {
+        console.error('Ошибка сервера:', response.status, text);
+        alert(`Ошибка отправки: ${text}`);
+      }
+    } catch (error) {
+      console.error('Ошибка соединения:', error.message);
+      alert(`Сбой сети: ${error.message}`);
     }
-
   } catch (error) {
-    console.error('Ошибка:', error);
-    alert(`❌ Ошибка: ${error.message}`);
+    console.error('Ошибка конвертации:', error.message);
+    alert(`Ошибка конвертации: ${error.message}`);
   }
 };
 
-// Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
-  // Разблокировка аудио контекста
   document.addEventListener('click', () => audioContext.resume(), { once: true });
 
-  // Получаем элементы интерфейса
   const soundButtons = document.querySelectorAll('.container .pressable:not([id^="melodyTopButton"])');
   const melodyTopButtons = document.querySelectorAll('.pressable[id^="melodyTopButton"]');
   const beatTrackElement = document.getElementById('beatTrack');
@@ -181,16 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const playButton = document.getElementById('playButton');
   const recordButton = document.getElementById('recordButton');
 
-  // Обработчики кнопок
   cassette.addEventListener('click', () => {
     appState.isRecording = !appState.isRecording;
     cassetteContainer.classList.toggle('recording', appState.isRecording);
-    if (appState.isRecording) {
-      chunks = []; // Очищаем предыдущие данные
-      mediaRecorder.start();
-    } else {
-      mediaRecorder.stop();
-    }
+    if (appState.isRecording) mediaRecorder.start();
+    else mediaRecorder.stop();
   });
 
   recordButton.addEventListener('click', () => {
