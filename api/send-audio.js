@@ -1,49 +1,48 @@
-import fetch from 'node-fetch';
-import { Readable } from 'stream';
-import FormData from 'form-data';
+const multer = require('multer');
+const fetch = require('node-fetch');
 
-export default async (req, res) => {
+const upload = multer({ storage: multer.memoryStorage() });
+const BOT_TOKEN = '8053491578:AAGSIrd3qdvzGh-ZU4SmTJjsKOMHmcKNr3c';
+const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+
+const runMiddleware = (req, res, fn) => {
+  return new Promise((resolve, reject) => {
+    fn(req, res, (result) => {
+      if (result instanceof Error) return reject(result);
+      return resolve(result);
+    });
+  });
+};
+
+module.exports = async (req, res) => {
   try {
-    // Получаем данные из запроса
-    const chunks = [];
-    for await (const chunk of req) {
-      chunks.push(chunk);
-    }
-    const audioBuffer = Buffer.concat(chunks);
-    const chatId = req.headers['chat-id'];
+    await runMiddleware(req, res, upload.single('audio'));
 
-    // Создаем поток для аудио
-    const audioStream = new Readable();
-    audioStream.push(audioBuffer);
-    audioStream.push(null);
+    console.log('req.body:', req.body);
+    console.log('req.file:', req.file);
 
-    // Формируем FormData
-    const form = new FormData();
-    form.append('chat_id', chatId);
-    form.append('audio', audioStream, {
-      filename: 'recording.webm',
-      contentType: 'audio/webm',
+    const chatId = req.body.chat_id;
+    if (!chatId) return res.status(400).send('Ошибка: chat_id не передан');
+    if (!req.file || !req.file.buffer) return res.status(400).send('Ошибка: аудиофайл не передан');
+
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+    formData.append('audio', req.file.buffer, 'recording.wav'); // Оставляем WAV
+
+    const response = await fetch(`${TELEGRAM_API}/sendAudio`, {
+      method: 'POST',
+      body: formData,
     });
-
-    // Отправляем в Telegram API
-    const response = await fetch(
-      `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendAudio`,
-      {
-        method: 'POST',
-        body: form,
-        headers: form.getHeaders(),
-      }
-    );
-
     const result = await response.json();
-    console.log('Ответ Telegram API:', result); // Добавьте эту строку
-    res.status(200).json(result);
+    console.log('Ответ Telegram API:', result);
 
+    if (result.ok) {
+      res.status(200).send('Мелодия отправлена в Telegram');
+    } else {
+      res.status(500).send(`Ошибка Telegram: ${result.description}`);
+    }
   } catch (error) {
-    console.error('Ошибка:', error);
-    res.status(500).json({ 
-      error: error.message,
-      stack: error.stack 
-    });
+    console.error('Ошибка сервера:', error.message);
+    res.status(500).send(`Ошибка сервера: ${error.message}`);
   }
 };

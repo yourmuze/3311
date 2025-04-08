@@ -96,32 +96,48 @@ function updateBeatTrack(timestamp) {
   requestAnimationFrame(updateBeatTrack);
 }
 
+mediaRecorder.ondataavailable = (event) => {
+  if (event.data.size > 0) {
+    chunks.push(event.data);
+    console.log('Данные записи добавлены в chunks, размер:', event.data.size);
+  } else {
+    console.log('Получены пустые данные от mediaRecorder');
+  }
+};
+
 mediaRecorder.onstop = async () => {
-  const blob = new Blob(chunks, { type: 'audio/webm' });
+  const blob = new Blob(chunks, { type: 'audio/wav' }); // Оставляем WAV
   chunks = [];
-  
-  // Получаем chat_id пользователя
-  const chatId = Telegram.WebApp.initDataUnsafe.user?.id;
+  console.log('Запись завершена. Размер Blob:', blob.size);
+
+  const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || '123456789';
+  console.log('Chat ID:', chatId);
   if (!chatId) {
     alert('Ошибка: войдите через Telegram!');
     return;
   }
 
-  // Отправляем аудио на сервер
+  const formData = new FormData();
+  formData.append('audio', blob, 'recording.wav'); // Имя файла с .wav
+  formData.append('chat_id', chatId);
+
   try {
     const response = await fetch('/api/send-audio', {
       method: 'POST',
-      headers: { 'chat-id': chatId },
-      body: blob,
+      body: formData,
     });
+    const text = await response.text();
+    console.log('Ответ сервера:', response.status, text);
 
     if (response.ok) {
       alert('🎧 Аудио отправлено! Проверьте чат с ботом.');
     } else {
-      alert('Ошибка отправки :(');
+      console.error('Ошибка сервера:', response.status, text);
+      alert(`Ошибка отправки: ${text}`);
     }
   } catch (error) {
-    alert('Сбой сети: ' + error.message);
+    console.error('Ошибка соединения:', error.message);
+    alert(`Сбой сети: ${error.message}`);
   }
 };
 
