@@ -1,8 +1,9 @@
 const fetch = require('node-fetch');
 const Busboy = require('busboy');
-const FormData = require('form-data'); // Добавляем form-data
+const FormData = require('form-data');
 const BOT_TOKEN = '8053491578:AAGSIrd3qdvzGh-ZU4SmTJjsKOMHmcKNr3c';
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 exports.handler = async (event) => {
   console.log('Функция send-audio вызвана');
@@ -26,7 +27,6 @@ exports.handler = async (event) => {
     let chatId;
     const audioChunks = [];
 
-    // Обрабатываем поля
     busboy.on('field', (name, value) => {
       if (name === 'chat_id') {
         chatId = value;
@@ -34,7 +34,6 @@ exports.handler = async (event) => {
       }
     });
 
-    // Обрабатываем файл
     busboy.on('file', (name, file, info) => {
       if (name === 'audio') {
         console.log('Обнаружен файл:', info);
@@ -47,7 +46,6 @@ exports.handler = async (event) => {
       }
     });
 
-    // Ожидаем завершения парсинга
     const parsePromise = new Promise((resolve, reject) => {
       busboy.on('finish', () => {
         const audioBuffer = Buffer.concat(audioChunks);
@@ -61,10 +59,8 @@ exports.handler = async (event) => {
       });
     });
 
-    // Передаём bodyBuffer в busboy
     busboy.end(bodyBuffer);
 
-    // Ждём завершения парсинга
     const { chatId: parsedChatId, audioBuffer } = await parsePromise;
 
     if (!parsedChatId) {
@@ -81,6 +77,15 @@ exports.handler = async (event) => {
         statusCode: 400,
         headers: { 'Access-Control-Allow-Origin': '*' },
         body: JSON.stringify({ error: 'Аудиофайл не передан или пустой' }),
+      };
+    }
+
+    if (audioBuffer.length > MAX_FILE_SIZE) {
+      console.log('Файл слишком большой:', audioBuffer.length);
+      return {
+        statusCode: 400,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ error: `Файл слишком большой (${(audioBuffer.length / 1024 / 1024).toFixed(2)} МБ). Максимум 50 МБ.` }),
       };
     }
 
@@ -105,10 +110,16 @@ exports.handler = async (event) => {
       };
     } else {
       console.log('Ошибка Telegram:', result.description);
+      let errorMessage = result.description;
+      if (result.description.includes('wrong file type')) {
+        errorMessage = 'Неправильный формат файла. Попробуйте записать более длинное аудио или использовать WAV.';
+      } else if (result.description.includes('file is too big')) {
+        errorMessage = 'Файл слишком большой. Максимум 50 МБ.';
+      }
       return {
         statusCode: 500,
         headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ error: `Ошибка Telegram: ${result.description}` }),
+        body: JSON.stringify({ error: `Ошибка Telegram: ${errorMessage}` }),
       };
     }
   } catch (error) {
