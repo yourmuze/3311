@@ -119,6 +119,14 @@ mediaRecorder.onstop = async () => {
     const mp3Blob = new Blob([mp3Data, mp3encoder.flush()], { type: 'audio/mp3' });
     console.log('Конвертация завершена. Размер MP3 Blob:', mp3Blob.size);
 
+    // Для отладки: скачиваем MP3 локально, чтобы проверить
+    const url = URL.createObjectURL(mp3Blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'test.mp3';
+    a.click();
+    URL.revokeObjectURL(url);
+
     const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || '123456789';
     console.log('Chat ID:', chatId);
     if (!chatId) {

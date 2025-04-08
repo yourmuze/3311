@@ -7,6 +7,7 @@ exports.handler = async (event) => {
   console.log('Event:', event);
 
   try {
+    // Проверяем Content-Type
     const contentType = event.headers['content-type'];
     console.log('Content-Type:', contentType);
     if (!contentType || !contentType.includes('multipart/form-data')) {
@@ -18,19 +19,26 @@ exports.handler = async (event) => {
       };
     }
 
-    const body = Buffer.from(event.body, 'base64');
+    // Декодируем тело запроса из base64 (Netlify передаёт body в base64)
+    const bodyBuffer = Buffer.from(event.body, 'base64');
     const boundary = contentType.split('boundary=')[1];
-    const parts = body.toString().split(`--${boundary}`);
+    const parts = bodyBuffer.toString('binary').split(`--${boundary}`);
 
     let chatId, audioBuffer;
-    for (const part of parts) {
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
       if (part.includes('name="chat_id"')) {
         chatId = part.split('\r\n\r\n')[1]?.split('\r\n')[0]?.trim();
         console.log('Chat ID:', chatId);
       }
       if (part.includes('name="audio"')) {
-        const audioData = part.split('\r\n\r\n')[1];
-        audioBuffer = Buffer.from(audioData, 'binary');
+        // Извлекаем заголовки и данные
+        const [header, ...dataParts] = part.split('\r\n\r\n');
+        const dataEnd = dataParts.join('\r\n\r\n').lastIndexOf('\r\n--');
+        const rawData = dataEnd !== -1 ? dataParts.join('\r\n\r\n').substring(0, dataEnd) : dataParts.join('\r\n\r\n');
+        
+        // Двоичные данные файла
+        audioBuffer = Buffer.from(rawData, 'binary');
         console.log('Размер аудиофайла:', audioBuffer?.length);
       }
     }
@@ -54,6 +62,7 @@ exports.handler = async (event) => {
 
     const formData = new FormData();
     formData.append('chat_id', chatId);
+    // Передаём audioBuffer как Buffer (node-fetch преобразует его в Blob)
     formData.append('audio', audioBuffer, 'recording.mp3');
 
     console.log('Отправка в Telegram API...');
