@@ -1,21 +1,37 @@
 import fetch from 'node-fetch';
+import { Readable } from 'stream';
+import FormData from 'form-data';
 
 export default async (req, res) => {
   try {
-    // Получаем аудио и chat_id из запроса
-    const audioBlob = await req.blob();
-    const chatId = req.headers.get('chat-id');
+    // Получаем данные из запроса
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const audioBuffer = Buffer.concat(chunks);
+    const chatId = req.headers['chat-id'];
 
-    // Формируем запрос к Telegram API
-    const formData = new FormData();
-    formData.append('chat_id', chatId);
-    formData.append('audio', audioBlob, 'recording.webm');
+    // Создаем поток для аудио
+    const audioStream = new Readable();
+    audioStream.push(audioBuffer);
+    audioStream.push(null);
 
+    // Формируем FormData
+    const form = new FormData();
+    form.append('chat_id', chatId);
+    form.append('audio', audioStream, {
+      filename: 'recording.webm',
+      contentType: 'audio/webm',
+    });
+
+    // Отправляем в Telegram API
     const response = await fetch(
       `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendAudio`,
       {
         method: 'POST',
-        body: formData,
+        body: form,
+        headers: form.getHeaders(),
       }
     );
 
@@ -23,6 +39,10 @@ export default async (req, res) => {
     res.status(200).json(result);
 
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Ошибка:', error);
+    res.status(500).json({ 
+      error: error.message,
+      stack: error.stack 
+    });
   }
 };
