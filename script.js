@@ -5,8 +5,8 @@ const appState = {
   bpm: 120,
   volume: 1.0,
   activeMelody: null,
-  activeSounds: new Map(), // Хранит активные звуки для воспроизведения
-  beatTrack: [], // Хранит звуки на дорожке с уникальными ID
+  activeSounds: new Map(),
+  beatTrack: [],
   trackDuration: 6000,
   trackStartTime: null,
   pauseTime: null,
@@ -97,15 +97,34 @@ function updateBeatTrack(timestamp) {
 }
 
 mediaRecorder.ondataavailable = e => chunks.push(e.data);
-mediaRecorder.onstop = () => {
+mediaRecorder.onstop = async () => {
   const blob = new Blob(chunks, { type: 'audio/wav' });
   chunks = [];
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'recording.wav';
-  a.click();
-  URL.revokeObjectURL(url);
+
+  // Получаем chat_id из Telegram Web App
+  const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || 'DEFAULT_CHAT_ID'; // Замени DEFAULT_CHAT_ID для тестов
+
+  // Отправляем файл на внутренний API Vercel
+  const formData = new FormData();
+  formData.append('audio', blob, 'recording.wav');
+  formData.append('chat_id', chatId);
+
+  try {
+    const response = await fetch('/api/send-audio', {
+      method: 'POST',
+      body: formData,
+    });
+    if (response.ok) {
+      console.log('Мелодия отправлена боту');
+      window.Telegram.WebApp.showAlert('Мелодия отправлена в чат!');
+    } else {
+      console.error('Ошибка сервера:', response.statusText);
+      window.Telegram.WebApp.showAlert('Ошибка при отправке мелодии');
+    }
+  } catch (error) {
+    console.error('Ошибка:', error);
+    window.Telegram.WebApp.showAlert('Ошибка соединения');
+  }
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -152,36 +171,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const soundSrc = soundPaths[soundType][soundIndex];
         const sound = await loadSound(soundSrc);
 
-        // Воспроизводим звук сразу
         playSound(sound, false, true);
 
-        // Добавляем звук на бит-дорожку
         const currentTime = appState.isPlaying && !appState.isPaused 
           ? (performance.now() - appState.trackStartTime) % appState.trackDuration 
           : 0;
         const timeInSeconds = currentTime / 1000;
-        const uniqueId = `${soundType}-${soundIndex}-${Date.now()}`; // Уникальный ID для каждого звука
+        const uniqueId = `${soundType}-${soundIndex}-${Date.now()}`;
         appState.beatTrack.push({ sound, type: soundType, time: timeInSeconds, id: uniqueId });
 
-        // Создаём маркер
         const marker = document.createElement('div');
         marker.classList.add('beat-marker', soundType);
         marker.style.left = `${(timeInSeconds / (appState.trackDuration / 1000)) * 100}%`;
         marker.dataset.time = timeInSeconds;
         marker.dataset.type = soundType;
-        marker.dataset.id = uniqueId; // Привязываем ID к маркеру
+        marker.dataset.id = uniqueId;
         beatTrackElement.appendChild(marker);
 
-        // Кнопка мигает (pressed → normal)
         toggleButtonImage(button, true);
-        setTimeout(() => toggleButtonImage(button, false), 100); // Возвращаем в normal через 100 мс
+        setTimeout(() => toggleButtonImage(button, false), 100);
 
-        // Добавляем возможность удаления по клику на маркер
         marker.addEventListener('click', () => {
           appState.beatTrack = appState.beatTrack.filter(entry => entry.id !== marker.dataset.id);
           marker.remove();
         });
-
       } catch (err) {
         console.error(`Error handling sound for ${soundType}${soundIndex}:`, err);
       }
@@ -263,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
       stopSound(appState.activeMelody);
       appState.activeMelody = null;
     }
- onsole.log('Stop button clicked, all sounds and markers cleared');
+    console.log('Stop button clicked, all sounds and markers cleared');
     pauseButton.classList.remove('pressed');
   });
 

@@ -1,0 +1,12 @@
+{
+    "rewrites": [
+      {
+        "source": "/api/send-audio",
+        "destination": "/api/send-audio.js"
+      },
+      {
+        "source": "/(.*)",
+        "destination": "/index.html"
+      }
+    ]
+  }
