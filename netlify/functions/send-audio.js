@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const Busboy = require('busboy');
+const FormData = require('form-data'); // Добавляем form-data
 const BOT_TOKEN = '8053491578:AAGSIrd3qdvzGh-ZU4SmTJjsKOMHmcKNr3c';
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
@@ -85,7 +86,7 @@ exports.handler = async (event) => {
 
     const formData = new FormData();
     formData.append('chat_id', parsedChatId);
-    formData.append('audio', audioBuffer, 'recording.mp3');
+    formData.append('audio', audioBuffer, { filename: 'recording.mp3', contentType: 'audio/mp3' });
 
     console.log('Отправка в Telegram API...');
     const response = await fetch(`${TELEGRAM_API}/sendAudio`, {
