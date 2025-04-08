@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const formidable = require('formidable');
 const BOT_TOKEN = '8053491578:AAGSIrd3qdvzGh-ZU4SmTJjsKOMHmcKNr3c';
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
@@ -19,29 +20,22 @@ exports.handler = async (event) => {
       };
     }
 
-    // Декодируем тело запроса из base64 (Netlify передаёт body в base64)
+    // Парсим multipart/form-data с помощью formidable
+    const form = new formidable.IncomingForm();
     const bodyBuffer = Buffer.from(event.body, 'base64');
-    const boundary = contentType.split('boundary=')[1];
-    const parts = bodyBuffer.toString('binary').split(`--${boundary}`);
 
-    let chatId, audioBuffer;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (part.includes('name="chat_id"')) {
-        chatId = part.split('\r\n\r\n')[1]?.split('\r\n')[0]?.trim();
-        console.log('Chat ID:', chatId);
-      }
-      if (part.includes('name="audio"')) {
-        // Извлекаем заголовки и данные
-        const [header, ...dataParts] = part.split('\r\n\r\n');
-        const dataEnd = dataParts.join('\r\n\r\n').lastIndexOf('\r\n--');
-        const rawData = dataEnd !== -1 ? dataParts.join('\r\n\r\n').substring(0, dataEnd) : dataParts.join('\r\n\r\n');
-        
-        // Двоичные данные файла
-        audioBuffer = Buffer.from(rawData, 'binary');
-        console.log('Размер аудиофайла:', audioBuffer?.length);
-      }
-    }
+    const { fields, files } = await new Promise((resolve, reject) => {
+      form.parse(bodyBuffer, (err, fields, files) => {
+        if (err) reject(err);
+        else resolve({ fields, files });
+      });
+    });
+
+    console.log('Fields:', fields);
+    console.log('Files:', files);
+
+    const chatId = fields.chat_id?.[0];
+    const audioFile = files.audio?.[0];
 
     if (!chatId) {
       console.log('chat_id отсутствует');
@@ -51,7 +45,8 @@ exports.handler = async (event) => {
         body: JSON.stringify({ error: 'chat_id не передан' }),
       };
     }
-    if (!audioBuffer) {
+
+    if (!audioFile || !audioFile.filepath) {
       console.log('Аудиофайл не передан');
       return {
         statusCode: 400,
@@ -60,9 +55,13 @@ exports.handler = async (event) => {
       };
     }
 
+    // Читаем файл из временного пути, созданного formidable
+    const fs = require('fs').promises;
+    const audioBuffer = await fs.readFile(audioFile.filepath);
+    console.log('Размер аудиофайла:', audioBuffer.length);
+
     const formData = new FormData();
     formData.append('chat_id', chatId);
-    // Передаём audioBuffer как Buffer (node-fetch преобразует его в Blob)
     formData.append('audio', audioBuffer, 'recording.mp3');
 
     console.log('Отправка в Telegram API...');
