@@ -106,18 +106,16 @@ mediaRecorder.ondataavailable = (event) => {
 };
 
 mediaRecorder.onstop = async () => {
-  // Создаём WAV Blob из записанных данных
   const wavBlob = new Blob(chunks, { type: 'audio/wav' });
   chunks = [];
   console.log('Запись завершена. Размер WAV Blob:', wavBlob.size);
 
-  // Конвертируем WAV в MP3 с помощью lamejs
   try {
     const arrayBuffer = await wavBlob.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    const channelData = audioBuffer.getChannelData(0); // Моно (берём первый канал)
-    const mp3encoder = new lamejs.Mp3Encoder(1, audioBuffer.sampleRate, 128); // 1 канал, 128 kbps
-    const mp3Data = mp3encoder.encodeBuffer(Float32Array.from(channelData).map(x => x * 32767)); // Конвертируем в 16-bit PCM
+    const channelData = audioBuffer.getChannelData(0);
+    const mp3encoder = new lamejs.Mp3Encoder(1, audioBuffer.sampleRate, 128);
+    const mp3Data = mp3encoder.encodeBuffer(Float32Array.from(channelData).map(x => x * 32767));
     const mp3Blob = new Blob([mp3Data, mp3encoder.flush()], { type: 'audio/mp3' });
     console.log('Конвертация завершена. Размер MP3 Blob:', mp3Blob.size);
 
@@ -129,11 +127,11 @@ mediaRecorder.onstop = async () => {
     }
 
     const formData = new FormData();
-    formData.append('audio', mp3Blob, 'recording.mp3'); // Отправляем как MP3
+    formData.append('audio', mp3Blob, 'recording.mp3');
     formData.append('chat_id', chatId);
 
     try {
-      const response = await fetch('/api/send-audio', {
+      const response = await fetch('/.netlify/functions/send-audio', {
         method: 'POST',
         body: formData,
       });
@@ -172,8 +170,13 @@ document.addEventListener('DOMContentLoaded', () => {
   cassette.addEventListener('click', () => {
     appState.isRecording = !appState.isRecording;
     cassetteContainer.classList.toggle('recording', appState.isRecording);
-    if (appState.isRecording) mediaRecorder.start();
-    else mediaRecorder.stop();
+    if (appState.isRecording) {
+      console.log('Начало записи');
+      mediaRecorder.start();
+    } else {
+      console.log('Остановка записи');
+      mediaRecorder.stop();
+    }
   });
 
   recordButton.addEventListener('click', () => {
@@ -181,9 +184,11 @@ document.addEventListener('DOMContentLoaded', () => {
     recordButton.classList.toggle('pressed', isPressed);
     if (isPressed) {
       appState.isRecording = true;
+      console.log('Начало записи с кнопки');
       mediaRecorder.start();
     } else {
       appState.isRecording = false;
+      console.log('Остановка записи с кнопки');
       mediaRecorder.stop();
     }
   });

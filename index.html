@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="preload" href="/access/sounds/kick1.mp3" as="audio">
   <link rel="preload" href="/access/p/kick_button_normal.png" as="image">
-  <script src="https://telegram.org/js/telegram-web-app.js" async></script>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 </head>
 <body>
   <center>
@@ -42,7 +42,9 @@
       <div class="beat-track" id="beatTrack">
         <div class="progress-bar" id="progressBar"></div>
       </div>
-      <img src="/access/p/play_button_normal.png" id="playButton" class="pressable downButton" data-base-src="/access/p/play_button" data-tooltip="Играть"><img src="/access/p/stop_button_normal.png" id="stopButton" class="pressable downButton" data-base-src="/access/p/stop_button" data-tooltip="Остановить"><img src="/access/p/pause_button_normal.png" id="pauseButton" class="pressable downButton" data-base-src="/access/p/pause_button" data-tooltip="Пауза">
+      <img src="/access/p/play_button_normal.png" id="playButton" class="pressable downButton" data-base-src="/access/p/play_button" data-tooltip="Играть">
+      <img src="/access/p/stop_button_normal.png" id="stopButton" class="pressable downButton" data-base-src="/access/p/stop_button" data-tooltip="Остановить">
+      <img src="/access/p/pause_button_normal.png" id="pauseButton" class="pressable downButton" data-base-src="/access/p/pause_button" data-tooltip="Пауза">
     </div>
   </center>
 
