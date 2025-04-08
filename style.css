@@ -1,49 +1,210 @@
-/* style.css */
-
-/* Основные стили для тела страницы */
 body {
-    background-color: #f0f0f0;
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
+  background-color: #d3d3d3;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
-/* Контейнер для кнопок */
+.containertop {
+  width: 380px;
+  height: auto;
+  cursor: pointer;
+  transition: filter 0.3s ease, box-shadow 0.3s ease;
+  margin-top: 20px;
+}
+
+.cassette-container.recording .containertop {
+  filter: brightness(0.9);
+  box-shadow: 0 0 15px #FFA500;
+}
+
+.melody-top-container {
+  width: 355px;
+}
+
 .container {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 15px;
-    padding: 20px;
+  width: 370px;
+  background-color: #b4b4b4;
+  border: 4px solid black;
+  border-bottom: 2px;
+  border-radius: 10px 10px 0 0;
+  min-height: 350px;
 }
 
-/* Стили для кнопок */
+.containerdown {
+  width: 370px;
+  background-color: #d3d3d3;
+  border: 4px solid black;
+  border-top: 2px solid black;
+  border-radius: 0 0 10px 10px;
+  height: 170px;
+}
+
 .pressable {
-    cursor: pointer;
-    width: 100px;
-    height: 100px;
-    transition: opacity 0.2s ease-in-out;
+  cursor: pointer;
+  transition: opacity 0.2s ease-in-out;
+  position: relative;
 }
 
-/* Стили для нажатых кнопок */
-.pressable.pressed {
-    opacity: 0.7;
-    animation: pulse 2s infinite; /* Пульсация каждые 2 секунды */
+.downButton {
+  position: relative;
+  width: 110px;
+  height: 60px;
+  transition: box-shadow 0.2s ease-in-out; /* Обновлено без transform */
+  box-shadow: 4px rgba(0, 0, 0, 0.2);
+  margin: 0;
 }
 
-/* Анимация пульсации */
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
+.downButton:active {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); /* Обновлено без сдвига */
 }
 
-/* Стили для слайдера громкости */
-#volumeSlider {
-    width: 100px;
-    margin: 20px;
+.downButton.pressed {
+  box-shadow: 0 0 10px #000;
 }
+
+#recordButton {
+  margin-top: 10px;
+  height: 45px;
+  width: 330px;
+  transition: transform 0.1s ease-in-out, box-shadow 0.2s ease-in-out;
+  box-shadow: 4px rgba(0, 0, 0, 0.2);
+}
+
+#recordButton:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+#recordButton.pressed {
+  box-shadow: 0 0 10px #000;
+}
+
+#beatTrack {
+  margin-top: 6px;
+}
+
+#melodyTopButton1, #melodyTopButton2, #melodyTopButton3 {
+  margin-top: 9px;
+  width: 115px;
+}
+
+#kickButton1, #kickButton2, #kickButton3 {
+  margin-top: 10px;
+  width: 115px;
+}
+
+#melodyButton1, #melodyButton2, #melodyButton3 {
+  width: 115px;
+}
+
+#thirdButton1, #thirdButton2, #thirdButton3 {
+  width: 115px;
+}
+
+#fourthButton1, #fourthButton2, #fourthButton3 {
+  width: 115px;
+}
+
+#pauseButton {
+  height: 47px;
+}
+
+
+
+.pressable.kick.pressed {
+  opacity: 0.9;
+  box-shadow: 0 0 10px #FF4500;
+}
+
+.pressable.melody.pressed {
+  opacity: 0.9;
+  box-shadow: 0 0 10px #FFA500;
+}
+
+.pressable.third.pressed {
+  opacity: 0.9;
+  box-shadow: 0 0 10px #FFD700;
+}
+
+.pressable.fourth.pressed {
+  opacity: 0.9;
+  box-shadow: 0 0 10px #FFFF00;
+}
+
+.beat-track {
+  width: 330px;
+  height: 30px;
+  background-color: #ccc;
+  position: relative;
+  border: 2px solid black;
+  border-radius: 5px;
+}
+
+.progress-bar {
+  width: 0%;
+  height: 100%;
+  background-color: #FFFFFF;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: width 0.1s linear;
+}
+
+/* Добавляем стили для маркеров */
+.beat-marker {
+  position: absolute;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  background-color: transparent; /* По умолчанию прозрачный */
+}
+
+.beat-marker.kick {
+  background-color: #FF4500; /* Оранжево-красный для kick */
+}
+
+.beat-marker.melody {
+  background-color: #FFA500; /* Оранжевый для melody */
+}
+
+.beat-marker.third {
+  background-color: #FFD700; /* Золотой для third */
+}
+
+.beat-marker.fourth {
+  background-color: #FFFF00; /* Жёлтый для fourth */
+}
+
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]:hover:after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #333;
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
+  opacity: 0.9;
+}
+
+[data-tooltip]:hover:before {
+  content: '';
+  position: absolute;
+  bottom: 90%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #333 transparent transparent transparent;
+  z-index: 10;
+}
+
