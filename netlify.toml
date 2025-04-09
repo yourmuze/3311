@@ -4,4 +4,6 @@
  
 
 [functions]
-  node_bundler = "esbuild"  # Используем esbuild для бандлинга функций
+  node_bundler = "esbuild" 
+  function = "telegram_bot"
+  runtime = "python-3.8"
