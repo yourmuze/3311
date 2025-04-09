@@ -17,11 +17,10 @@ const appState = {
 
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const destination = audioContext.createMediaStreamDestination();
-const mediaRecorder = new MediaRecorder(destination.stream);
+let mediaRecorder = null; // Инициализируем позже
 let audioCache = new Map();
 let imageCache = new Map();
 let chunks = [];
-let abortController = null;
 let isAudioContextActivated = false;
 let isAudioLoaded = false;
 let worker;
@@ -82,8 +81,17 @@ async function loadSound(src) {
     try {
       const audio = new Audio(src);
       await new Promise((resolve, reject) => {
-        audio.onloadedmetadata = () => resolve();
+        audio.onloadedmetadata = () => {
+          console.log(`Метаданные для ${src} загружены`);
+          resolve();
+        };
+        audio.oncanplaythrough = () => {
+          console.log(`Звук ${src} готов к воспроизведению`);
+          resolve();
+        };
         audio.onerror = () => reject(new Error(`Failed to load audio: ${src}`));
+        // Тайм-аут 10 секунд
+        setTimeout(() => reject(new Error(`Timeout loading audio: ${src}`)), 10000);
       });
       const source = audioContext.createMediaElementSource(audio);
       const gainNode = audioContext.createGain();
@@ -178,16 +186,13 @@ async function preloadAllSounds() {
 
   for (const src of allSounds) {
     try {
-      const sound = await loadSound(src);
-      // Проверяем, что звук действительно готов к воспроизведению
-      await new Promise((resolve) => {
-        sound.audio.oncanplaythrough = () => resolve();
-      });
+      await loadSound(src); // loadSound уже проверяет oncanplaythrough
       loadedSounds++;
       window.Telegram.WebApp.MainButton.setText(`Загрузка звуков (${loadedSounds}/${totalSounds})`);
       console.log(`Звук ${src} полностью загружен и готов к воспроизведению`);
     } catch (err) {
       console.error(`Не удалось загрузить ${src}:`, err);
+      loadedSounds++; // Продолжаем, чтобы не блокировать
     }
   }
 
@@ -201,26 +206,32 @@ async function preloadAllSounds() {
 async function requestMicPermission() {
   if (navigator.mediaDevices) {
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log('Доступ к микрофону получен');
+      // Инициализируем mediaRecorder только после получения доступа
+      if (!mediaRecorder) {
+        mediaRecorder = new MediaRecorder(destination.stream);
+        mediaRecorder.ondataavailable = (event) => {
+          console.log('mediaRecorder.ondataavailable вызвана');
+          if (event.data.size > 0) {
+            chunks.push(event.data);
+            console.log('Данные записи добавлены в chunks, размер:', event.data.size);
+          } else {
+            console.log('Получены пустые данные от mediaRecorder');
+          }
+        };
+        mediaRecorder.onstop = handleMediaRecorderStop;
+      }
+      return stream;
     } catch (err) {
       console.error('Ошибка доступа к микрофону:', err);
       window.Telegram.WebApp.showAlert('Ошибка доступа к микрофону. Разрешите доступ в настройках.');
+      throw err;
     }
   }
 }
 
-mediaRecorder.ondataavailable = (event) => {
-  console.log('mediaRecorder.ondataavailable вызвана');
-  if (event.data.size > 0) {
-    chunks.push(event.data);
-    console.log('Данные записи добавлены в chunks, размер:', event.data.size);
-  } else {
-    console.log('Получены пустые данные от mediaRecorder');
-  }
-};
-
-mediaRecorder.onstop = async () => {
+async function handleMediaRecorderStop() {
   console.log('mediaRecorder.onstop вызвана');
   console.log('Состояние mediaRecorder:', mediaRecorder.state);
 
@@ -235,7 +246,7 @@ mediaRecorder.onstop = async () => {
   }
 
   const blob = new Blob(chunks, { type: 'audio/wav' });
-  chunks = []; // Сбрасываем chunks после создания blob
+  chunks = [];
   console.log('Запись завершена. Размер WAV Blob:', blob.size);
 
   if (blob.size === 0) {
@@ -248,7 +259,15 @@ mediaRecorder.onstop = async () => {
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     const channelData = audioBuffer.getChannelData(0);
 
-    worker = new Worker('worker.js');
+    // Проверяем доступность worker.js
+    try {
+      worker = new Worker('worker.js');
+    } catch (err) {
+      console.error('Ошибка загрузки worker.js:', err);
+      window.Telegram.WebApp.showAlert('Ошибка: не удалось загрузить worker.js. Запись не может быть конвертирована.');
+      return;
+    }
+
     worker.postMessage({
       channelData: Float32Array.from(channelData).map(x => x * 32767),
       sampleRate: audioBuffer.sampleRate,
@@ -277,8 +296,6 @@ mediaRecorder.onstop = async () => {
       window.Telegram.WebApp.MainButton.setText('Отправка...');
       window.Telegram.WebApp.MainButton.show();
       window.Telegram.WebApp.MainButton.showProgress();
-
-      abortController = new AbortController();
 
       let retries = 3;
       for (let i = 0; i < retries; i++) {
@@ -324,10 +341,9 @@ mediaRecorder.onstop = async () => {
   } finally {
     window.Telegram.WebApp.MainButton.hideProgress();
     window.Telegram.WebApp.MainButton.hide();
-    abortController = null;
-    appState.isRecording = false; // Сбрасываем состояние записи
+    appState.isRecording = false;
   }
-};
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('DOMContentLoaded вызван');
@@ -339,7 +355,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Telegram Web App не доступен');
   }
 
-  // Инициализируем состояние записи
   appState.isRecording = false;
   chunks = [];
 
@@ -378,7 +393,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.log(`Кнопка нажата, soundType: ${soundType}, soundIndex: ${soundIndex}`);
       try {
         const soundSrc = soundPaths[soundType][soundIndex];
-        const sound = audioCache.get(soundSrc); // Используем уже загруженный звук
+        const sound = audioCache.get(soundSrc);
         if (!sound) {
           console.error(`Звук ${soundSrc} не найден в кэше`);
           return;
@@ -570,7 +585,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('pauseButton нажата, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
     if (appState.isPlaying && !appState.isPaused) {
       appState.isPaused = true;
-      appState.pauseTime = Wperformance.now();
+      appState.pauseTime = performance.now(); // Исправлено: Wperformance → performance
       if (appState.activeMelody) pauseSound(appState.activeMelody);
       pauseButton.classList.add('pressed');
     } else if (appState.isPaused) {

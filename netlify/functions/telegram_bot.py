@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Получаем токен бота из переменных окружения
-BOT_TOKEN = os.getenv("8053491578:AAGSIrd3qdvzGh-ZU4SmTJjsKOMHmcKNr3c")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Инициализируем бота
 bot = Bot(token=BOT_TOKEN)
