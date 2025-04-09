@@ -52,12 +52,22 @@ const markAppReady = () => {
 };
 markAppReady();
 
-// === Активация AudioContext ===
+// === Активация AudioContext с прогревом ===
 const activateAudioContext = async () => {
   try {
     if (!isAudioContextActivated || audioContext.state === 'suspended') {
       await audioContext.resume();
       console.log('AudioContext активирован, состояние:', audioContext.state);
+
+      // Воспроизводим "прогревающий" звук для разблокировки
+      const silentBuffer = audioContext.createBuffer(1, 1, 22050);
+      const silentSource = audioContext.createBufferSource();
+      silentSource.buffer = silentBuffer;
+      silentSource.connect(audioContext.destination);
+      silentSource.start(0);
+      silentSource.stop(audioContext.currentTime + 0.001); // Очень короткий звук
+      console.log('Прогревающий звук воспроизведен');
+
       isAudioContextActivated = true;
     }
   } catch (err) {
@@ -109,7 +119,7 @@ async function loadSound(src) {
       console.log(`Звук ${src} добавлен в кэш как AudioBuffer`);
     } catch (err) {
       console.error(`Ошибка загрузки звука ${src}:`, err);
-      return null; // Возвращаем null, чтобы обработчик мог продолжить работу
+      return null;
     }
   }
   return audioCache.get(src);
@@ -125,7 +135,7 @@ async function playSound(audioObj, loop = false) {
   await activateAudioContext();
 
   if (audioContext.state !== 'running') {
-    console.warn('AudioContext не в состоянии running');
+    console.warn('AudioContext не в состоянии running, пропускаем воспроизведение');
     return;
   }
 
@@ -151,7 +161,7 @@ async function playSound(audioObj, loop = false) {
 
     source.start(0);
     activeSources.push(source);
-    console.log('Звук воспроизводится');
+    console.log('Звук успешно запущен');
   } catch (err) {
     console.error('Ошибка воспроизведения звука:', err);
   }
@@ -338,7 +348,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (err) {
     console.error('Ошибка при инициализации:', err);
     window.Telegram.WebApp.showAlert('Ошибка загрузки приложения.');
-    return; // Прерываем выполнение, но интерфейс остается доступным
+    return;
   }
 
   const soundButtons = document.querySelectorAll('.container .pressable:not(.downButton):not([id^="melodyTopButton"]):not(#cassette)');
