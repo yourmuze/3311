@@ -56,8 +56,11 @@ markAppReady();
 const activateAudioContext = async () => {
   if (!isAudioContextActivated) {
     await audioContext.resume();
-    console.log('AudioContext активирован');
+    console.log('AudioContext активирован, состояние:', audioContext.state);
     isAudioContextActivated = true;
+  } else if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+    console.log('AudioContext возобновлен, состояние:', audioContext.state);
   }
 };
 
@@ -103,8 +106,14 @@ async function loadSound(src) {
 // === Функция воспроизведения звука ===
 async function playSound(audioObj, loop = false) {
   console.log('playSound вызвана, loop:', loop);
+  await activateAudioContext(); // Активируем перед каждым воспроизведением
+
+  if (audioContext.state !== 'running') {
+    console.warn('AudioContext не в состоянии running, попытка возобновления');
+    await audioContext.resume();
+  }
+
   const { buffer, gainNode, activeSources } = audioObj;
-  await activateAudioContext();
 
   if (activeSources.length >= 10) {
     const oldestSource = activeSources.shift();
@@ -299,6 +308,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   console.log('DOMContentLoaded вызван');
   markAppReady();
 
+  // Попытка активации AudioContext при загрузке
+  await activateAudioContext();
+
   await Promise.all([preloadAllSounds(), preloadImages()]);
   await requestMicPermission();
 
@@ -327,7 +339,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     button.dataset.sound = soundType;
     button.dataset.soundIndex = soundIndex;
 
-    button.addEventListener(eventType, (e) => {
+    button.addEventListener(eventType, async (e) => {
       e.preventDefault();
       if (!isAudioLoaded) {
         console.log('Звуки ещё не загружены, подождите...');
@@ -335,6 +347,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       console.log(`Кнопка нажата, soundType: ${soundType}, soundIndex: ${soundIndex}`);
       try {
+        await activateAudioContext(); // Активируем перед воспроизведением
         const soundSrc = soundPaths[soundType][soundIndex];
         const sound = audioCache.get(soundSrc);
         if (!sound) {
@@ -393,6 +406,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         button.classList.add('pressed');
         toggleButtonImage(button, true);
         try {
+          await activateAudioContext(); // Активируем перед воспроизведением
           const soundSrc = soundPaths['melodytop'][index];
           const sound = audioCache.get(soundSrc);
           if (!sound) {
