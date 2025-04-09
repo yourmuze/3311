@@ -54,13 +54,14 @@ markAppReady();
 
 // === Активация AudioContext ===
 const activateAudioContext = async () => {
-  if (!isAudioContextActivated) {
-    await audioContext.resume();
-    console.log('AudioContext активирован, состояние:', audioContext.state);
-    isAudioContextActivated = true;
-  } else if (audioContext.state === 'suspended') {
-    await audioContext.resume();
-    console.log('AudioContext возобновлен, состояние:', audioContext.state);
+  try {
+    if (!isAudioContextActivated || audioContext.state === 'suspended') {
+      await audioContext.resume();
+      console.log('AudioContext активирован, состояние:', audioContext.state);
+      isAudioContextActivated = true;
+    }
+  } catch (err) {
+    console.error('Ошибка активации AudioContext:', err);
   }
 };
 
@@ -77,40 +78,55 @@ async function preloadImages() {
     '/access/p/stop_button_normal.png', '/access/p/stop_button_pressed.png',
     '/access/p/pause_button_normal.png', '/access/p/pause_button_pressed.png'
   ];
-  imagePaths.forEach(path => {
-    const img = new Image();
-    img.src = path;
-    imageCache.set(path, img);
-  });
+  for (const path of imagePaths) {
+    try {
+      const img = new Image();
+      img.src = path;
+      imageCache.set(path, img);
+      console.log(`Изображение ${path} загружено`);
+    } catch (err) {
+      console.error(`Ошибка загрузки изображения ${path}:`, err);
+    }
+  }
 }
 
 // === Загрузка и кэширование звуков ===
 async function loadSound(src) {
   console.log(`loadSound вызвана для ${src}`);
   if (!audioCache.has(src)) {
-    const response = await fetch(src);
-    const arrayBuffer = await response.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    try {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`HTTP ошибка ${response.status}`);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-    const gainNode = audioContext.createGain();
-    gainNode.gain.value = 0.5 * appState.volume;
-    gainNode.connect(audioContext.destination); // Для слышимости пользователю
-    gainNode.connect(destination); // Для записи
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0.5 * appState.volume;
+      gainNode.connect(audioContext.destination); // Для слышимости пользователю
+      gainNode.connect(destination); // Для записи
 
-    audioCache.set(src, { buffer: audioBuffer, gainNode, activeSources: [] });
-    console.log(`Звук ${src} добавлен в кэш как AudioBuffer`);
+      audioCache.set(src, { buffer: audioBuffer, gainNode, activeSources: [] });
+      console.log(`Звук ${src} добавлен в кэш как AudioBuffer`);
+    } catch (err) {
+      console.error(`Ошибка загрузки звука ${src}:`, err);
+      return null; // Возвращаем null, чтобы обработчик мог продолжить работу
+    }
   }
   return audioCache.get(src);
 }
 
 // === Функция воспроизведения звука ===
 async function playSound(audioObj, loop = false) {
+  if (!audioObj) {
+    console.warn('playSound: audioObj отсутствует');
+    return;
+  }
   console.log('playSound вызвана, loop:', loop);
-  await activateAudioContext(); // Активируем перед каждым воспроизведением
+  await activateAudioContext();
 
   if (audioContext.state !== 'running') {
-    console.warn('AudioContext не в состоянии running, попытка возобновления');
-    await audioContext.resume();
+    console.warn('AudioContext не в состоянии running');
+    return;
   }
 
   const { buffer, gainNode, activeSources } = audioObj;
@@ -121,33 +137,41 @@ async function playSound(audioObj, loop = false) {
     console.log('Остановлен старый источник из-за превышения лимита');
   }
 
-  const source = audioContext.createBufferSource();
-  source.buffer = buffer;
-  source.loop = loop;
-  source.connect(gainNode);
+  try {
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.loop = loop;
+    source.connect(gainNode);
 
-  source.onended = () => {
-    const index = activeSources.indexOf(source);
-    if (index !== -1) activeSources.splice(index, 1);
-    console.log('Источник завершил воспроизведение и удален');
-  };
+    source.onended = () => {
+      const index = activeSources.indexOf(source);
+      if (index !== -1) activeSources.splice(index, 1);
+      console.log('Источник завершил воспроизведение и удален');
+    };
 
-  source.start(0);
-  activeSources.push(source);
-  console.log('Звук воспроизводится');
+    source.start(0);
+    activeSources.push(source);
+    console.log('Звук воспроизводится');
+  } catch (err) {
+    console.error('Ошибка воспроизведения звука:', err);
+  }
 }
 
 // === Пауза и остановка звука ===
 function pauseSound(audioObj) {
   console.log('pauseSound вызвана');
-  audioObj.activeSources.forEach(source => source.stop());
-  audioObj.activeSources = [];
+  if (audioObj) {
+    audioObj.activeSources.forEach(source => source.stop());
+    audioObj.activeSources = [];
+  }
 }
 
 function stopSound(audioObj) {
   console.log('stopSound вызвана');
-  audioObj.activeSources.forEach(source => source.stop());
-  audioObj.activeSources = [];
+  if (audioObj) {
+    audioObj.activeSources.forEach(source => source.stop());
+    audioObj.activeSources = [];
+  }
 }
 
 // === Загрузка всех звуков ===
@@ -163,8 +187,8 @@ async function preloadAllSounds() {
 
   for (const src of allSounds) {
     try {
-      await loadSound(src);
-      loadedSounds++;
+      const sound = await loadSound(src);
+      if (sound) loadedSounds++;
       window.Telegram.WebApp.MainButton.setText(`Загрузка звуков (${loadedSounds}/${totalSounds})`);
       console.log(`Звук ${src} полностью загружен`);
     } catch (err) {
@@ -308,11 +332,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   console.log('DOMContentLoaded вызван');
   markAppReady();
 
-  // Попытка активации AudioContext при загрузке
-  await activateAudioContext();
-
-  await Promise.all([preloadAllSounds(), preloadImages()]);
-  await requestMicPermission();
+  try {
+    await Promise.all([preloadAllSounds(), preloadImages()]);
+    await requestMicPermission();
+  } catch (err) {
+    console.error('Ошибка при инициализации:', err);
+    window.Telegram.WebApp.showAlert('Ошибка загрузки приложения.');
+    return; // Прерываем выполнение, но интерфейс остается доступным
+  }
 
   const soundButtons = document.querySelectorAll('.container .pressable:not(.downButton):not([id^="melodyTopButton"]):not(#cassette)');
   const melodyTopButtons = document.querySelectorAll('.container .pressable[id^="melodyTopButton"]');
@@ -331,6 +358,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   console.log('stopButton:', stopButton ? 'найден' : 'не найден');
   console.log('pauseButton:', pauseButton ? 'найден' : 'не найден');
 
+  if (!soundButtons.length || !melodyTopButtons.length) {
+    console.error('Критическая ошибка: кнопки не найдены в DOM');
+    window.Telegram.WebApp.showAlert('Ошибка: интерфейс не загружен.');
+    return;
+  }
+
   // === Обработка нажатий по кнопкам звуков ===
   soundButtons.forEach((button, index) => {
     const soundType = button.id.replace(/\d+$/, '').replace('Button', '').toLowerCase();
@@ -347,7 +380,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       console.log(`Кнопка нажата, soundType: ${soundType}, soundIndex: ${soundIndex}`);
       try {
-        await activateAudioContext(); // Активируем перед воспроизведением
+        await activateAudioContext();
         const soundSrc = soundPaths[soundType][soundIndex];
         const sound = audioCache.get(soundSrc);
         if (!sound) {
@@ -406,7 +439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         button.classList.add('pressed');
         toggleButtonImage(button, true);
         try {
-          await activateAudioContext(); // Активируем перед воспроизведением
+          await activateAudioContext();
           const soundSrc = soundPaths['melodytop'][index];
           const sound = audioCache.get(soundSrc);
           if (!sound) {
