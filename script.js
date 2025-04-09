@@ -12,6 +12,7 @@ const appState = {
   trackStartTime: null,
   pauseTime: null,
   lastSoundTime: 0,
+  currentCycle: 0, // Добавляем счётчик циклов
 };
 
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -22,6 +23,7 @@ let imageCache = new Map();
 let chunks = [];
 let abortController = null;
 let isAudioContextActivated = false;
+let isAudioLoaded = false;
 let worker;
 
 const isMobile = /Mobi|Android/i.test(navigator.userAgent);
@@ -136,14 +138,33 @@ function toggleButtonImage(button, isPressed) {
 function updateBeatTrack(timestamp) {
   if (!appState.trackStartTime) appState.trackStartTime = timestamp;
   const elapsed = timestamp - appState.trackStartTime;
+
+  // Вычисляем текущий цикл и время внутри цикла
+  const cycleDuration = appState.trackDuration;
+  const currentCycle = Math.floor(elapsed / cycleDuration);
+  const cycleTime = elapsed % cycleDuration;
+
+  // Обновляем прогресс-бар
   document.getElementById('progressBar').style.width = 
-    `${(elapsed % appState.trackDuration) / appState.trackDuration * 100}%`;
+    `${(cycleTime / cycleDuration) * 100}%`;
+
+  // Если начался новый цикл, сбрасываем флаги воспроизведения
+  if (currentCycle !== appState.currentCycle) {
+    appState.currentCycle = currentCycle;
+    appState.beatTrack.forEach(entry => {
+      entry.hasPlayedInCycle = false; // Сбрасываем флаг для нового цикла
+    });
+  }
+
+  // Воспроизводим звуки в нужные моменты
   appState.beatTrack.forEach(entry => {
-    const expectedTime = entry.time * 1000;
-    if (Math.abs(elapsed - expectedTime) < 50) {
+    const expectedTime = entry.time * 1000; // Время в миллисекундах
+    if (!entry.hasPlayedInCycle && Math.abs(cycleTime - expectedTime) < 50) {
       playSound(entry.sound, false, true);
+      entry.hasPlayedInCycle = true; // Помечаем, что звук воспроизведён в этом цикле
     }
   });
+
   if (appState.isPlaying) {
     requestAnimationFrame(updateBeatTrack);
   }
@@ -155,16 +176,25 @@ async function preloadAllSounds() {
   const totalSounds = allSounds.length;
   let loadedSounds = 0;
 
+  window.Telegram.WebApp.MainButton.setText(`Загрузка звуков (0/${totalSounds})`);
+  window.Telegram.WebApp.MainButton.show();
+  window.Telegram.WebApp.MainButton.showProgress();
+
   for (const src of allSounds) {
     try {
       await loadSound(src);
       loadedSounds++;
+      window.Telegram.WebApp.MainButton.setText(`Загрузка звуков (${loadedSounds}/${totalSounds})`);
       console.log(`Звук ${src} загружен`);
     } catch (err) {
       console.error(`Не удалось загрузить ${src}:`, err);
     }
   }
+
+  window.Telegram.WebApp.MainButton.hideProgress();
+  window.Telegram.WebApp.MainButton.hide();
   console.log('Все звуки загружены');
+  isAudioLoaded = true;
   window.Telegram.WebApp.ready();
 }
 
@@ -305,7 +335,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await Promise.all([preloadAllSounds(), preloadImages()]);
 
-  // Выбор кнопок из одного контейнера
   const soundButtons = document.querySelectorAll('.container .pressable:not(.downButton):not([id^="melodyTopButton"]):not(#cassette)');
   const melodyTopButtons = document.querySelectorAll('.container .pressable[id^="melodyTopButton"]');
   const cassette = document.getElementById('cassette');
@@ -323,7 +352,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   console.log('stopButton:', stopButton ? 'найден' : 'не найден');
   console.log('pauseButton:', pauseButton ? 'найден' : 'не найден');
 
-  // Обработчики для центральных кнопок (kick, melody, third, fourth)
   soundButtons.forEach((button, index) => {
     const soundType = button.id.replace(/\d+$/, '').replace('Button', '').toLowerCase();
     const soundIndex = (index % 3);
@@ -333,6 +361,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     button.addEventListener(eventType, async (e) => {
       e.preventDefault();
+      if (!isAudioLoaded) {
+        console.log('Звуки ещё не загружены, подождите...');
+        return;
+      }
       console.log(`Кнопка нажата, soundType: ${soundType}, soundIndex: ${soundIndex}`);
       try {
         const soundSrc = soundPaths[soundType][soundIndex];
@@ -344,7 +376,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           : 0;
         const timeInSeconds = currentTime / 1000;
         const uniqueId = `${soundType}-${soundIndex}-${Date.now()}`;
-        appState.beatTrack.push({ sound, type: soundType, time: timeInSeconds, id: uniqueId });
+        appState.beatTrack.push({ 
+          sound, 
+          type: soundType, 
+          time: timeInSeconds, 
+          id: uniqueId,
+          hasPlayedInCycle: false
+        });
 
         const marker = document.createElement('div');
         marker.classList.add('beat-marker', soundType);
@@ -360,13 +398,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Обработчики для melodyTopButtons (только короткое нажатие)
   melodyTopButtons.forEach((button, index) => {
     button.dataset.sound = 'melodytop';
     button.dataset.soundIndex = index;
 
     button.addEventListener(eventType, async (e) => {
       e.preventDefault();
+      if (!isAudioLoaded) {
+        console.log('Звуки ещё не загружены, подождите...');
+        return;
+      }
       console.log('melodyTopButton нажата, index:', index);
       const isPressed = !button.classList.contains('pressed');
 
@@ -410,9 +451,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Обработчики для нижних кнопок
   cassette.addEventListener(eventType, async (e) => {
     e.preventDefault();
+    if (!isAudioLoaded) {
+      console.log('Звуки ещё не загружены, подождите...');
+      return;
+    }
     console.log('cassette нажата, isRecording:', appState.isRecording);
     if (!appState.isRecording) {
       await requestMicPermission();
@@ -428,6 +472,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   recordButton.addEventListener(eventType, async (e) => {
     e.preventDefault();
+    if (!isAudioLoaded) {
+      console.log('Звуки ещё не загружены, подождите...');
+      return;
+    }
     console.log('recordButton нажата, isRecording:', appState.isRecording);
     const isPressed = !recordButton.classList.contains('pressed');
     recordButton.classList.toggle('pressed', isPressed);
@@ -445,6 +493,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   playButton.addEventListener(eventType, async (e) => {
     e.preventDefault();
+    if (!isAudioLoaded) {
+      console.log('Звуки ещё не загружены, подождите...');
+      return;
+    }
     console.log('playButton нажата, isPlaying:', appState.isPlaying);
     if (!appState.isPlaying) {
       await activateAudioContext();
@@ -460,6 +512,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   stopButton.addEventListener(eventType, (e) => {
     e.preventDefault();
+    if (!isAudioLoaded) {
+      console.log('Звуки ещё не загружены, подождите...');
+      return;
+    }
     console.log('stopButton нажата');
     appState.isPlaying = false;
     appState.isPaused = false;
@@ -475,6 +531,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   pauseButton.addEventListener(eventType, (e) => {
     e.preventDefault();
+    if (!isAudioLoaded) {
+      console.log('Звуки ещё не загружены, подождите...');
+      return;
+    }
     console.log('pauseButton нажата, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
     if (appState.isPlaying && !appState.isPaused) {
       appState.isPaused = true;
