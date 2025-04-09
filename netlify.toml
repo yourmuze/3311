@@ -1,9 +1,11 @@
 [build]
   publish = "."  # Папка для публикации (корень проекта)
   functions = "netlify/functions"  # Папка с функциями
- 
 
+# Общие настройки для функций (по умолчанию для Node.js)
 [functions]
-  node_bundler = "esbuild" 
-  function = "telegram_bot"
-  runtime = "python-3.8"
+  node_bundler = "esbuild"
+
+# Настройки для функции telegram_bot (Python)
+[functions.telegram_bot]
+  # Отключаем node
