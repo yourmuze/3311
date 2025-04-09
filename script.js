@@ -45,7 +45,7 @@ const activateAudioContext = async () => {
   }
 };
 
-// Кэширование изображений
+// Кэширование изображений (восстанавливаем исходную версию)
 async function preloadImages() {
   console.log('preloadImages вызвана');
   const imagePaths = [
@@ -57,30 +57,6 @@ async function preloadImages() {
     'access/images/melodyTop3_pressed.png',
     'access/images/send_normal.png',
     'access/images/send_pressed.png',
-    'access/images/kick1_normal.png',
-    'access/images/kick1_pressed.png',
-    'access/images/kick2_normal.png',
-    'access/images/kick2_pressed.png',
-    'access/images/kick3_normal.png',
-    'access/images/kick3_pressed.png',
-    'access/images/melody1_normal.png',
-    'access/images/melody1_pressed.png',
-    'access/images/melody2_normal.png',
-    'access/images/melody2_pressed.png',
-    'access/images/melody3_normal.png',
-    'access/images/melody3_pressed.png',
-    'access/images/third1_normal.png',
-    'access/images/third1_pressed.png',
-    'access/images/third2_normal.png',
-    'access/images/third2_pressed.png',
-    'access/images/third3_normal.png',
-    'access/images/third3_pressed.png',
-    'access/images/fourth1_normal.png',
-    'access/images/fourth1_pressed.png',
-    'access/images/fourth2_normal.png',
-    'access/images/fourth2_pressed.png',
-    'access/images/fourth3_normal.png',
-    'access/images/fourth3_pressed.png',
   ];
 
   imagePaths.forEach(path => {
@@ -144,6 +120,7 @@ function stopSound(audioObj) {
   audio.currentTime = 0;
 }
 
+// Восстанавливаем исходную версию toggleButtonImage
 function toggleButtonImage(button, isPressed) {
   console.log('toggleButtonImage вызвана, isPressed:', isPressed);
   const baseSrc = button.dataset.baseSrc;
@@ -460,14 +437,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // Восстанавливаем обработчики для soundButtons (kick, melody, third, fourth)
+  // Обработчики для soundButtons (kick, melody, third, fourth)
   soundButtons.forEach((button, index) => {
     const soundType = button.id.replace(/\d+$/, '').replace('Button', '').toLowerCase();
     const soundIndex = (index % 3);
 
     button.dataset.sound = soundType;
     button.dataset.soundIndex = soundIndex;
-    button.dataset.baseSrc = `access/images/${soundType}${soundIndex + 1}`; // Устанавливаем baseSrc
+    // Убираем задание dataset.baseSrc, так как оно должно быть в HTML
 
     button.addEventListener(eventType, async () => {
       console.log(`soundButton clicked, soundType: ${soundType}, soundIndex: ${soundIndex}`);
@@ -510,20 +487,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Восстанавливаем обработчики для melodyTopButtons
+  // Обработчики для melodyTopButtons
   melodyTopButtons.forEach((button, index) => {
     button.dataset.sound = 'melodytop';
     button.dataset.soundIndex = index;
-    button.dataset.baseSrc = `access/images/melodyTop${index + 1}`; // Устанавливаем baseSrc
+    // Убираем задание dataset.baseSrc, так как оно должно быть в HTML
 
     let pressTimer;
     let isLongPress = false;
 
     button.addEventListener(eventType, async (event) => {
-      event.preventDefault(); // Предотвращаем стандартное поведение
+      event.preventDefault();
       console.log('melodyTopButton clicked, index:', index);
 
-      // Логика долгого нажатия
       pressTimer = setTimeout(() => {
         isLongPress = true;
         const soundSrc = soundPaths['melodytop'][index];
@@ -535,7 +511,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         sendMelodyToChat(soundSrc, chatId);
       }, 1000);
 
-      // Логика короткого нажатия
       const handleShortPress = async () => {
         if (isLongPress) {
           isLongPress = false;
@@ -583,14 +558,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       };
 
-      // Для мобильных устройств используем touchend для завершения
       if (isMobile) {
         button.addEventListener('touchend', () => {
           clearTimeout(pressTimer);
           handleShortPress();
         }, { once: true });
       } else {
-        // Для десктопа сразу обрабатываем короткое нажатие
         clearTimeout(pressTimer);
         handleShortPress();
       }
