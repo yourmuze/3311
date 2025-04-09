@@ -5,14 +5,6 @@ body {
   overflow: hidden;
 }
 
-.containertop {
-  width: 380px;
-  height: auto;
-  cursor: pointer;
-  transition: filter 0.3s ease, box-shadow 0.3s ease;
-  margin-top: 20px;
-}
-
 .cassette-container.recording .containertop {
   filter: brightness(0.9);
   box-shadow: 0 0 15px #FFA500;
@@ -22,23 +14,22 @@ body {
   width: 355px;
 }
 
-.container {
-  width: 370px;
-  background-color: #b4b4b4;
-  border: 4px solid black;
-  border-bottom: 2px;
-  border-radius: 10px 10px 0 0;
-  min-height: 350px;
+#cassette {
+ width: 370px;
+ margin-top: 30px;
+ margin-left: 10px;
 }
 
-.containerdown {
-  width: 370px;
-  background-color: #d3d3d3;
+.container {
+  width: 390px;
+  background-color: #b4b4b4;
   border: 4px solid black;
-  border-top: 2px solid black;
-  border-radius: 0 0 10px 10px;
-  height: 170px;
+ border-radius: 10px;
+ height: 890px;
+
 }
+
+
 
 .pressable {
   cursor: pointer;

@@ -65,12 +65,12 @@ const activateAudioContext = async () => {
 async function preloadImages() {
   console.log('preloadImages вызвана');
   const imagePaths = [
+    // Удаляем записи связанные с record_button
     '/access/p/melodyTopButton_normal.png', '/access/p/melodyTopButton_pressed.png',
     '/access/p/kick_button_normal.png', '/access/p/kick_button_pressed.png',
     '/access/p/melody_button_normal.png', '/access/p/melody_button_pressed.png',
     '/access/p/third_button_normal.png', '/access/p/third_button_pressed.png',
     '/access/p/fourth_button_normal.png', '/access/p/fourth_button_pressed.png',
-    '/access/p/record_button_normal.png', '/access/p/record_button_pressed.png',
     '/access/p/play_button_normal.png', '/access/p/play_button_pressed.png',
     '/access/p/stop_button_normal.png', '/access/p/stop_button_pressed.png',
     '/access/p/pause_button_normal.png', '/access/p/pause_button_pressed.png'
@@ -175,25 +175,23 @@ async function preloadAllSounds() {
 
 // === Запрос разрешения на доступ к микрофону и инициализация mediaRecorder ===
 async function requestMicPermission() {
-  if (navigator.mediaDevices) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = (event) => {
-        console.log('ondataavailable, размер данных:', event.data.size);
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-      mediaRecorder.onstop = async () => {
-        console.log('mediaRecorder остановлен');
-        handleRecordingStop();
-      };
-      console.log('Доступ к микрофону получен');
-    } catch (err) {
-      console.error('Ошибка доступа к микрофону:', err);
-      window.Telegram.WebApp.showAlert('Ошибка доступа к микрофону. Проверьте настройки.');
-    }
+  // Заменяем получение микрофона на выход приложения
+  try {
+    mediaRecorder = new MediaRecorder(destination.stream);
+    mediaRecorder.ondataavailable = (event) => {
+      console.log('ondataavailable, размер данных:', event.data.size);
+      if (event.data.size > 0) {
+        chunks.push(event.data);
+      }
+    };
+    mediaRecorder.onstop = async () => {
+      console.log('mediaRecorder остановлен');
+      handleRecordingStop();
+    };
+    console.log('Доступ к аудиопотоку приложения получен');
+  } catch (err) {
+    console.error('Ошибка доступа к аудиопотоку:', err);
+    window.Telegram.WebApp.showAlert('Ошибка записи аудио.');
   }
 }
 
