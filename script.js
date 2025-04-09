@@ -33,12 +33,19 @@ const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 console.log('Устройство мобильное:', isMobile);
 
 async function loadSound(src) {
+  console.log(`loadSound вызвана для ${src}`);
   if (!audioCache.has(src)) {
     try {
       const audio = new Audio(src);
       await new Promise((resolve, reject) => {
-        audio.onloadedmetadata = resolve;
-        audio.onerror = () => reject(new Error(`Failed to load audio: ${src}`));
+        audio.onloadedmetadata = () => {
+          console.log(`Метаданные для ${src} загружены`);
+          resolve();
+        };
+        audio.onerror = () => {
+          console.error(`Ошибка загрузки ${src}`);
+          reject(new Error(`Failed to load audio: ${src}`));
+        };
       });
       const source = audioContext.createMediaElementSource(audio);
       const gainNode = audioContext.createGain();
@@ -47,6 +54,7 @@ async function loadSound(src) {
       gainNode.connect(destination);
       gainNode.connect(audioContext.destination);
       audioCache.set(src, { audio, gainNode });
+      console.log(`Звук ${src} добавлен в кэш`);
     } catch (err) {
       console.error(`Ошибка загрузки звука ${src}:`, err);
       throw err;
@@ -55,31 +63,44 @@ async function loadSound(src) {
   return audioCache.get(src);
 }
 
-function playSound(audioObj, loop = false, resetTime = true) {
+async function playSound(audioObj, loop = false, resetTime = true) {
+  console.log('playSound вызвана, loop:', loop, 'resetTime:', resetTime);
   const { audio, gainNode } = audioObj;
+  if (audioContext.state !== 'running') {
+    await audioContext.resume();
+    console.log('AudioContext активирован в playSound');
+  }
   if (resetTime) audio.currentTime = 0;
   gainNode.gain.value = 0.5 * appState.volume;
   audio.loop = loop;
   audio.play().catch(err => console.error('Play error:', err));
+  console.log('Звук воспроизводится:', audio.src);
 }
 
 function pauseSound(audioObj) {
+  console.log('pauseSound вызвана');
   audioObj.audio.pause();
 }
 
 function stopSound(audioObj) {
+  console.log('stopSound вызвана');
   const { audio } = audioObj;
   audio.pause();
   audio.currentTime = 0;
 }
 
 function toggleButtonImage(button, isPressed) {
+  console.log('toggleButtonImage вызвана, isPressed:', isPressed);
   const baseSrc = button.dataset.baseSrc;
   button.src = isPressed ? `${baseSrc}_pressed.png` : `${baseSrc}_normal.png`;
 }
 
 function updateBeatTrack(timestamp) {
-  if (!appState.isPlaying || appState.isPaused) return;
+  console.log('updateBeatTrack вызвана, timestamp:', timestamp);
+  if (!appState.isPlaying || appState.isPaused) {
+    console.log('updateBeatTrack прервана: isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
+    return;
+  }
 
   if (!appState.trackStartTime) appState.trackStartTime = timestamp;
   const elapsed = timestamp - appState.trackStartTime;
@@ -336,6 +357,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('touchend', activateAudioContext);
   document.addEventListener('mousedown', activateAudioContext);
   document.addEventListener('mouseup', activateAudioContext);
+  document.addEventListener('pointerdown', activateAudioContext);
+  document.addEventListener('pointerup', activateAudioContext);
 
   await preloadAllSounds();
 
@@ -362,17 +385,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (mediaRecorder.state === 'inactive') {
         mediaRecorder.start();
+        console.log('mediaRecorder.start() вызван');
       } else {
         console.log('mediaRecorder уже в состоянии:', mediaRecorder.state);
         mediaRecorder.stop();
         setTimeout(() => {
           mediaRecorder.start();
+          console.log('mediaRecorder.start() вызван после перезапуска');
         }, 100);
       }
     } else {
       console.log('Остановка записи, состояние mediaRecorder:', mediaRecorder.state);
       if (mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
+        console.log('mediaRecorder.stop() вызван');
       } else {
         console.log('mediaRecorder уже в состоянии:', mediaRecorder.state);
       }
@@ -392,11 +418,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (mediaRecorder.state === 'inactive') {
         mediaRecorder.start();
+        console.log('mediaRecorder.start() вызван');
       } else {
         console.log('mediaRecorder уже в состоянии:', mediaRecorder.state);
         mediaRecorder.stop();
         setTimeout(() => {
           mediaRecorder.start();
+          console.log('mediaRecorder.start() вызван после перезапуска');
         }, 100);
       }
     } else {
@@ -404,6 +432,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.log('Остановка записи с кнопки, состояние mediaRecorder:', mediaRecorder.state);
       if (mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
+        console.log('mediaRecorder.stop() вызван');
       } else {
         console.log('mediaRecorder уже в состоянии:', mediaRecorder.state);
       }
@@ -418,11 +447,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     button.dataset.soundIndex = soundIndex;
 
     button.addEventListener('click', async () => {
+      console.log(`soundButton clicked, soundType: ${soundType}, soundIndex: ${soundIndex}`);
       try {
         const soundSrc = soundPaths[soundType][soundIndex];
         const sound = await loadSound(soundSrc);
 
-        playSound(sound, false, true);
+        await playSound(sound, false, true);
 
         const currentTime = appState.isPlaying && !appState.isPaused 
           ? (performance.now() - appState.trackStartTime) % appState.trackDuration 
@@ -459,6 +489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let pressTimer;
 
     button.addEventListener('mousedown', () => {
+      console.log('melodyTopButton mousedown');
       pressTimer = setTimeout(() => {
         const soundSrc = soundPaths['melodytop'][index];
         const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id || '123456789';
@@ -471,14 +502,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     button.addEventListener('mouseup', () => {
+      console.log('melodyTopButton mouseup');
       clearTimeout(pressTimer);
     });
 
     button.addEventListener('mouseleave', () => {
+      console.log('melodyTopButton mouseleave');
       clearTimeout(pressTimer);
     });
 
     button.addEventListener('click', async () => {
+      console.log('melodyTopButton clicked, index:', index);
       const isPressed = !button.classList.contains('pressed');
 
       melodyTopButtons.forEach(otherButton => {
@@ -507,7 +541,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (isPressed) {
           appState.activeMelody = sound;
-          playSound(sound, true, true);
+          await playSound(sound, true, true);
         } else {
           appState.activeMelody = null;
           stopSound(sound);
@@ -522,6 +556,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   sendMelodyButton.addEventListener('click', () => {
+    console.log('sendMelodyButton clicked');
     if (!appState.activeMelody) {
       window.Telegram.WebApp.showAlert('Сначала выберите мелодию!');
       return;
@@ -540,18 +575,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => toggleButtonImage(sendMelodyButton, false), 100);
   });
 
-  playButton.addEventListener('click', () => {
+  playButton.addEventListener('click', async () => {
+    console.log('playButton clicked, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
     if (!appState.isPlaying && !appState.isPaused) {
+      if (audioContext.state !== 'running') {
+        await audioContext.resume();
+        console.log('AudioContext активирован перед воспроизведением');
+      }
       appState.isPlaying = true;
       appState.trackStartTime = null;
       requestAnimationFrame(updateBeatTrack);
       if (appState.activeMelody) {
-        playSound(appState.activeMelody, true, true);
+        await playSound(appState.activeMelody, true, true);
       }
     }
   });
 
   stopButton.addEventListener('click', () => {
+    console.log('stopButton clicked');
     appState.isPlaying = false;
     appState.isPaused = false;
     appState.activeSounds.clear();
@@ -573,6 +614,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   pauseButton.addEventListener('click', () => {
+    console.log('pauseButton clicked');
     if (appState.isPlaying && !appState.isPaused) {
       appState.isPaused = true;
       appState.pauseTime = performance.now();
