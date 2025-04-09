@@ -14,11 +14,24 @@ const appState = {
   pauseTime: null,
   lastSoundTime: 0,
   currentCycle: 0,
+  maxPolyphony: 8, // Максимум одновременно звучащих семплов
+  voicePool: new Map(), // Пул голосов для каждого звука
 };
 
 // === Аудио ===
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const destination = audioContext.createMediaStreamDestination();
+
+// Мастер-компрессор
+const compressor = audioContext.createDynamicsCompressor();
+compressor.threshold.value = -20;
+compressor.knee.value = 10;
+compressor.ratio.value = 4;
+compressor.attack.value = 0.1;
+compressor.release.value = 0.25;
+compressor.connect(audioContext.destination);
+compressor.connect(destination);
+
 let mediaRecorder = null;
 let audioCache = new Map();
 let imageCache = new Map();
@@ -50,7 +63,7 @@ const markAppReady = () => {
     console.warn('Telegram WebApp не определён');
   }
 };
-markAppReady(); // первый вызов сразу, чтобы Telegram знал, что мини-приложение загружается
+markAppReady();
 
 // === Активация AudioContext ===
 const activateAudioContext = async () => {
@@ -65,7 +78,6 @@ const activateAudioContext = async () => {
 async function preloadImages() {
   console.log('preloadImages вызвана');
   const imagePaths = [
-    // Удаляем записи связанные с record_button
     '/access/p/melodyTopButton_normal.png', '/access/p/melodyTopButton_pressed.png',
     '/access/p/kick_button_normal.png', '/access/p/kick_button_pressed.png',
     '/access/p/melody_button_normal.png', '/access/p/melody_button_pressed.png',
@@ -82,7 +94,7 @@ async function preloadImages() {
   });
 }
 
-// === Загрузка и кэширование звуков ===
+// === Загрузка и кэширование звуков с нормализацией ===
 async function loadSound(src) {
   console.log(`loadSound вызвана для ${src}`);
   if (!audioCache.has(src)) {
@@ -91,56 +103,86 @@ async function loadSound(src) {
       audio.onloadedmetadata = resolve;
       audio.onerror = () => reject(new Error(`Failed to load audio: ${src}`));
     });
-    
-    // Прогрев аудио: воспроизводим звук с минимальной громкостью и затем останавливаем его
-    audio.volume = 0.0001;
-    audio.play().then(() => {
-      setTimeout(() => {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.volume = 1.0;
-        console.log(`Прогрев аудио ${src} завершён`);
-      }, 50);
-    }).catch(() => {});
 
-    const source = audioContext.createMediaElementSource(audio);
+    // Анализ громкости
+    const sourceNode = audioContext.createMediaElementSource(audio);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    sourceNode.connect(analyser);
+    analyser.connect(audioContext.destination);
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    analyser.getByteTimeDomainData(dataArray);
+    
+    let max = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const value = Math.abs(dataArray[i] - 128) / 128;
+      if (value > max) max = value;
+    }
+
+    const volumeCorrection = Math.min(1.5, 0.7 / Math.max(max, 0.01));
+
     const gainNode = audioContext.createGain();
-    gainNode.gain.value = 0.5 * appState.volume;
-    source.connect(gainNode);
-    gainNode.connect(destination);
-    gainNode.connect(audioContext.destination);
-    audioCache.set(src, { audio, gainNode });
-    console.log(`Звук ${src} добавлен в кэш`);
+    gainNode.gain.value = volumeCorrection * 0.7 * appState.volume;
+    
+    sourceNode.disconnect(analyser);
+    sourceNode.connect(gainNode);
+    gainNode.connect(compressor);
+
+    audioCache.set(src, { audio, gainNode, volumeCorrection });
+    console.log(`Звук ${src} добавлен в кэш с коррекцией ${volumeCorrection.toFixed(2)}`);
   }
   return audioCache.get(src);
 }
 
-// === Функция воспроизведения звука ===
+// === Функция воспроизведения звука с управлением полифонией ===
 async function playSound(audioObj, loop = false, resetTime = true) {
-  console.log('playSound вызвана, loop:', loop, 'resetTime:', resetTime);
   const { audio, gainNode } = audioObj;
+  
+  if (!appState.voicePool.has(audio.src)) {
+    appState.voicePool.set(audio.src, []);
+  }
+
+  const pool = appState.voicePool.get(audio.src);
+  let voice = pool.find(v => v.paused || v.ended);
+
+  if (!voice && pool.length < appState.maxPolyphony) {
+    voice = audio.cloneNode(true);
+    pool.push(voice);
+  }
+
+  if (!voice) {
+    console.warn('Polyphony limit reached for', audio.src);
+    return;
+  }
+
   await activateAudioContext();
-  if (resetTime) audio.currentTime = 0;
-  gainNode.gain.value = 0.5 * appState.volume;
-  audio.loop = loop;
-  audio.play().catch(err => console.error('Ошибка play:', err));
-  console.log('Звук воспроизводится:', audio.src);
+  if (resetTime) voice.currentTime = 0;
+  voice.volume = gainNode.gain.value;
+  voice.loop = loop;
+  
+  try {
+    await voice.play();
+    voice.onended = () => voice.pause();
+  } catch(err) {
+    console.error('Play error:', err);
+  }
 }
 
 // === Пауза и остановка звука ===
 function pauseSound(audioObj) {
-  console.log('pauseSound вызвана');
-  audioObj.audio.pause();
+  if (audioObj?.audio) audioObj.audio.pause();
 }
 
 function stopSound(audioObj) {
-  console.log('stopSound вызвана');
-  const { audio } = audioObj;
-  audio.pause();
-  audio.currentTime = 0;
+  if (audioObj?.audio) {
+    audioObj.audio.pause();
+    audioObj.audio.currentTime = 0;
+  }
 }
 
-// === Загрузка всех звуков (с прогревом через loadSound) ===
+// === Загрузка всех звуков ===
 async function preloadAllSounds() {
   console.log('preloadAllSounds вызвана');
   const allSounds = Object.values(soundPaths).flat();
@@ -153,15 +195,9 @@ async function preloadAllSounds() {
 
   for (const src of allSounds) {
     try {
-      const sound = await loadSound(src);
-      // Ждем, пока звук будет готов к воспроизведению
-      await new Promise(resolve => {
-        sound.audio.oncanplaythrough = resolve;
-        sound.audio.load();
-      });
+      await loadSound(src);
       loadedSounds++;
       window.Telegram.WebApp.MainButton.setText(`Загрузка звуков (${loadedSounds}/${totalSounds})`);
-      console.log(`Звук ${src} полностью загружен`);
     } catch (err) {
       console.error(`Не удалось загрузить ${src}:`, err);
     }
@@ -170,59 +206,36 @@ async function preloadAllSounds() {
   isAudioLoaded = true;
   window.Telegram.WebApp.MainButton.hideProgress();
   window.Telegram.WebApp.MainButton.hide();
-  markAppReady(); // Финальное уведомление Telegram, что приложение готово
+  markAppReady();
 }
 
-// === Запрос разрешения на доступ к микрофону и инициализация mediaRecorder ===
+// === Инициализация записи ===
 async function requestMicPermission() {
-  // Заменяем получение микрофона на выход приложения
   try {
     mediaRecorder = new MediaRecorder(destination.stream);
     mediaRecorder.ondataavailable = (event) => {
-      console.log('ondataavailable, размер данных:', event.data.size);
-      if (event.data.size > 0) {
-        chunks.push(event.data);
-      }
+      if (event.data.size > 0) chunks.push(event.data);
     };
-    mediaRecorder.onstop = async () => {
-      console.log('mediaRecorder остановлен');
-      handleRecordingStop();
-    };
-    console.log('Доступ к аудиопотоку приложения получен');
+    mediaRecorder.onstop = handleRecordingStop;
   } catch (err) {
-    console.error('Ошибка доступа к аудиопотоку:', err);
+    console.error('Ошибка записи:', err);
     window.Telegram.WebApp.showAlert('Ошибка записи аудио.');
   }
 }
 
 // === Обработка остановки записи ===
 async function handleRecordingStop() {
-  console.log('handleRecordingStop вызвана');
-  if (chunks.length === 0) {
-    console.log('Запись пуста');
-    return;
-  }
+  if (chunks.length === 0) return;
 
   const blob = new Blob(chunks, { type: 'audio/wav' });
   chunks = [];
-  console.log('WAV Blob создан, размер:', blob.size);
-  if (blob.size === 0) {
-    console.log('Ошибка: Blob пустой');
-    return;
-  }
 
   try {
     const arrayBuffer = await blob.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     const channelData = audioBuffer.getChannelData(0);
 
-    try {
-      worker = new Worker('worker.js');
-    } catch (err) {
-      window.Telegram.WebApp.showAlert('Ошибка: worker.js не найден');
-      return;
-    }
-
+    worker = new Worker('worker.js');
     worker.postMessage({
       channelData: Float32Array.from(channelData).map(x => x * 32767),
       sampleRate: audioBuffer.sampleRate,
@@ -230,17 +243,8 @@ async function handleRecordingStop() {
 
     worker.onmessage = async (e) => {
       const mp3Blob = e.data;
-      console.log('MP3 Blob получен, размер:', mp3Blob.size);
-      if (mp3Blob.size === 0) {
-        console.log('Ошибка: MP3 Blob пустой');
-        return;
-      }
-
       const chatId = window.Telegram.WebApp.initDataUnsafe.user?.id;
-      if (!chatId) {
-        console.log('Ошибка: chat_id отсутствует');
-        return;
-      }
+      if (!chatId) return;
 
       const formData = new FormData();
       formData.append('audio', mp3Blob, 'recording.mp3');
@@ -250,22 +254,15 @@ async function handleRecordingStop() {
       window.Telegram.WebApp.MainButton.show();
       window.Telegram.WebApp.MainButton.showProgress();
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
       try {
         const response = await fetch('/.netlify/functions/send-audio', {
           method: 'POST',
           body: formData,
           headers: { 'Accept': 'application/json' },
-          signal: controller.signal,
         });
-        clearTimeout(timeoutId);
-        const text = await response.text();
-        console.log('Ответ сервера:', response.status, text);
-        if (!response.ok) throw new Error(text);
-        console.log('Аудио отправлено успешно');
+        console.log('Ответ сервера:', response.status);
       } catch (error) {
-        console.error('Ошибка отправки аудио:', error.message);
+        console.error('Ошибка отправки:', error);
         window.Telegram.WebApp.showAlert(`Ошибка отправки: ${error.message}`);
       } finally {
         window.Telegram.WebApp.MainButton.hideProgress();
@@ -273,7 +270,7 @@ async function handleRecordingStop() {
       }
     };
   } catch (error) {
-    console.error('Ошибка в handleRecordingStop:', error.message);
+    console.error('Ошибка обработки:', error);
     window.Telegram.WebApp.showAlert(`Ошибка: ${error.message}`);
   } finally {
     appState.isRecording = false;
@@ -282,25 +279,18 @@ async function handleRecordingStop() {
 
 // === Функция переключения изображения кнопки ===
 function toggleButtonImage(button, isPressed) {
-  console.log('toggleButtonImage, isPressed:', isPressed);
   const baseSrc = button.dataset.baseSrc;
-  if (!baseSrc) {
-    console.error('dataset.baseSrc не задан для кнопки:', button);
-    return;
-  }
+  if (!baseSrc) return;
   const newSrc = isPressed ? `${baseSrc}_pressed.png` : `${baseSrc}_normal.png`;
   button.src = imageCache.has(newSrc) ? imageCache.get(newSrc).src : newSrc;
 }
 
-// === Обработка DOMContentLoaded и инициализация интерфейса ===
+// === Инициализация приложения ===
 document.addEventListener('DOMContentLoaded', async () => {
-  console.log('DOMContentLoaded вызван');
-  markAppReady(); // Дополнительный вызов на случай задержки
-
+  markAppReady();
   await Promise.all([preloadAllSounds(), preloadImages()]);
-  await requestMicPermission();
 
-  // Инициализация элементов интерфейса
+  // Инициализация элементов
   const soundButtons = document.querySelectorAll('.container .pressable:not(.downButton):not([id^="melodyTopButton"]):not(#cassette)');
   const melodyTopButtons = document.querySelectorAll('.container .pressable[id^="melodyTopButton"]');
   const cassette = document.getElementById('cassette');
@@ -310,15 +300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const pauseButton = document.getElementById('pauseButton');
   const beatTrackElement = document.getElementById('beatTrack');
 
-  console.log('soundButtons найдено:', soundButtons.length);
-  console.log('melodyTopButtons найдено:', melodyTopButtons.length);
-  console.log('cassette:', cassette ? 'найден' : 'не найден');
-  console.log('recordButton:', recordButton ? 'найден' : 'не найден');
-  console.log('playButton:', playButton ? 'найден' : 'не найден');
-  console.log('stopButton:', stopButton ? 'найден' : 'не найден');
-  console.log('pauseButton:', pauseButton ? 'найден' : 'не найден');
-
-  // === Обработка нажатий по кнопкам звуков ===
+  // Обработчики кнопок звуков
   soundButtons.forEach((button, index) => {
     const soundType = button.id.replace(/\d+$/, '').replace('Button', '').toLowerCase();
     const soundIndex = index % 3;
@@ -328,45 +310,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     button.addEventListener(eventType, (e) => {
       e.preventDefault();
-      if (!isAudioLoaded) {
-        console.log('Звуки ещё не загружены, подождите...');
-        return;
-      }
-      console.log(`Кнопка нажата, soundType: ${soundType}, soundIndex: ${soundIndex}`);
-      try {
-        const soundSrc = soundPaths[soundType][soundIndex];
-        const sound = audioCache.get(soundSrc);
-        if (!sound) {
-          console.error(`Звук ${soundSrc} не найден в кэше`);
-          return;
-        }
-        // Запуск без await для мгновенного отклика
-        playSound(sound, false, true);
+      if (!isAudioLoaded) return;
 
-        const currentTime = appState.isPlaying && !appState.isPaused 
-          ? (performance.now() - appState.trackStartTime) % appState.trackDuration
-          : 0;
-        const timeInSeconds = currentTime / 1000;
-        const uniqueId = `${soundType}-${soundIndex}-${Date.now()}`;
-        appState.beatTrack.push({ 
-          sound, type: soundType, time: timeInSeconds, id: uniqueId, hasPlayedInCycle: false 
-        });
+      const soundSrc = soundPaths[soundType][soundIndex];
+      const sound = audioCache.get(soundSrc);
+      if (!sound) return;
 
-        const marker = document.createElement('div');
-        marker.classList.add('beat-marker', soundType);
-        marker.style.left = `${(timeInSeconds / (appState.trackDuration / 1000)) * 100}%`;
-        marker.dataset.id = uniqueId;
-        beatTrackElement.appendChild(marker);
+      playSound(sound, false, true);
 
-        toggleButtonImage(button, true);
-        setTimeout(() => toggleButtonImage(button, false), 100);
-      } catch (err) {
-        console.error(`Ошибка воспроизведения ${soundType}${soundIndex}:`, err);
-      }
+      const currentTime = appState.isPlaying && !appState.isPaused 
+        ? (performance.now() - appState.trackStartTime) % appState.trackDuration
+        : 0;
+      
+      const uniqueId = `${soundType}-${soundIndex}-${Date.now()}`;
+      appState.beatTrack.push({ 
+        sound, 
+        type: soundType, 
+        time: currentTime / 1000, 
+        id: uniqueId, 
+        hasPlayedInCycle: false 
+      });
+
+      const marker = document.createElement('div');
+      marker.classList.add('beat-marker', soundType);
+      marker.style.left = `${(currentTime / appState.trackDuration) * 100}%`;
+      marker.dataset.id = uniqueId;
+      beatTrackElement.appendChild(marker);
+
+      toggleButtonImage(button, true);
+      setTimeout(() => toggleButtonImage(button, false), 100);
     });
   });
 
-  // === Обработка нажатий для кнопок мелодии верхнего ряда ===
+  // Обработчики кнопок мелодий
   melodyTopButtons.forEach((button, index) => {
     button.dataset.sound = 'melodytop';
     button.dataset.soundIndex = index;
@@ -386,38 +362,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (appState.activeMelody) {
         stopSound(appState.activeMelody);
         appState.activeMelody = null;
-        appState.activeMelodyIndex = null;
       }
 
       if (isPressed) {
         button.classList.add('pressed');
         toggleButtonImage(button, true);
-        try {
-          const soundSrc = soundPaths['melodytop'][index];
-          const sound = audioCache.get(soundSrc);
-          if (!sound) {
-            console.error(`Звук ${soundSrc} не найден в кэше`);
-            return;
-          }
+        const soundSrc = soundPaths['melodytop'][index];
+        const sound = audioCache.get(soundSrc);
+        if (sound) {
           appState.activeMelody = sound;
-          appState.activeMelodyIndex = index;
           await playSound(sound, true, true);
-        } catch (err) {
-          console.error(`Ошибка мелодии melodyTop ${index + 1}:`, err);
         }
       }
     });
   });
 
-  // === Обработка кнопки "кассета" (запись) ===
+  // Обработчики управления
   cassette?.addEventListener(eventType, async (e) => {
     e.preventDefault();
     if (!isAudioLoaded) return;
-    console.log('cassette нажата, isRecording:', appState.isRecording);
+    
     if (appState.isRecording) {
       appState.isRecording = false;
       mediaRecorder?.stop();
-      toggleButtonImage(cassette, false);
     } else {
       await requestMicPermission();
       if (!mediaRecorder) return;
@@ -425,43 +392,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       appState.isRecording = true;
       chunks = [];
       mediaRecorder.start();
-      toggleButtonImage(cassette, true);
     }
   });
 
-  // === Обработка кнопки "record" (альтернативная запись) ===
   recordButton?.addEventListener(eventType, async (e) => {
     e.preventDefault();
     if (!isAudioLoaded) return;
-  
-    console.log('recordButton нажата, isRecording:', appState.isRecording);
-  
+    
     if (appState.isRecording) {
       appState.isRecording = false;
       mediaRecorder?.stop();
-  
-      recordButton.classList.remove('pressed');
-      toggleButtonImage(recordButton, false);
     } else {
       await requestMicPermission();
       if (!mediaRecorder) return;
-  
       if (mediaRecorder.state === 'recording') mediaRecorder.stop();
-  
       appState.isRecording = true;
       chunks = [];
       mediaRecorder.start();
-  
-      recordButton.classList.add('pressed');
-      toggleButtonImage(recordButton, true);
     }
   });
 
-  // === Обработка кнопки "play" ===
   playButton?.addEventListener(eventType, async (e) => {
     e.preventDefault();
     if (!isAudioLoaded) return;
-    console.log('playButton нажата, isPlaying:', appState.isPlaying);
+    
     if (!appState.isPlaying) {
       await activateAudioContext();
       appState.isPlaying = true;
@@ -472,56 +426,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // === Обработка кнопки "stop" ===
   stopButton?.addEventListener(eventType, (e) => {
     e.preventDefault();
     if (!isAudioLoaded) return;
-    console.log('stopButton нажата');
+    
     appState.isPlaying = false;
     appState.isPaused = false;
     appState.beatTrack = [];
     beatTrackElement.innerHTML = '<div class="progress-bar" id="progressBar"></div>';
+    
     if (appState.activeMelody) {
       stopSound(appState.activeMelody);
       appState.activeMelody = null;
-      appState.activeMelodyIndex = null;
     }
-    pauseButton.classList.remove('pressed');
+    
+    pauseButton?.classList.remove('pressed');
   });
 
-  // === Обработка кнопки "pause" ===
   pauseButton?.addEventListener(eventType, (e) => {
     e.preventDefault();
     if (!isAudioLoaded) return;
-  
-    console.log('pauseButton нажата, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
-  
+    
     if (appState.isPlaying && !appState.isPaused) {
-      // Ставим на паузу
       appState.isPaused = true;
       appState.pauseTime = performance.now();
-  
-      // Останавливаем мелодию (если играет)
       if (appState.activeMelody) pauseSound(appState.activeMelody);
-  
       pauseButton.classList.add('pressed');
-      toggleButtonImage(pauseButton, true);
     } else if (appState.isPaused) {
-      // Снимаем с паузы
       appState.isPaused = false;
-      const pausedDuration = performance.now() - appState.pauseTime;
-      appState.trackStartTime += pausedDuration;
-  
+      appState.trackStartTime += performance.now() - appState.pauseTime;
       if (appState.activeMelody) appState.activeMelody.audio.play();
-  
       requestAnimationFrame(updateBeatTrack);
-  
       pauseButton.classList.remove('pressed');
-      toggleButtonImage(pauseButton, false);
     }
   });
 
-  // === Функция обновления beatTrack ===
+  // Функция обновления трека
   function updateBeatTrack(timestamp) {
     if (!appState.trackStartTime) appState.trackStartTime = timestamp;
     const elapsed = timestamp - appState.trackStartTime;
@@ -538,9 +478,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
+    // Автоматическая регулировка громкости
+    const activeCount = appState.beatTrack.filter(e => !e.hasPlayedInCycle).length;
+    const autoGain = Math.min(1.0, 1.0 / Math.sqrt(activeCount + 1));
+    
     appState.beatTrack.forEach(entry => {
       const expectedTime = entry.time * 1000;
       if (!entry.hasPlayedInCycle && Math.abs(cycleTime - expectedTime) < 50) {
+        if (entry.sound.gainNode) {
+          entry.sound.gainNode.gain.value = 
+            entry.sound.volumeCorrection * autoGain * appState.volume;
+        }
+        
+        // Ducking для мелодии при ударах
+        if (entry.type === 'kick' && appState.activeMelody?.gainNode) {
+          appState.activeMelody.gainNode.gain.setValueAtTime(
+            0.7 * appState.volume,
+            audioContext.currentTime
+          );
+          appState.activeMelody.gainNode.gain.linearRampToValueAtTime(
+            appState.volume,
+            audioContext.currentTime + 0.2
+          );
+        }
+        
         playSound(entry.sound, false, true);
         entry.hasPlayedInCycle = true;
       }
