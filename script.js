@@ -5,7 +5,7 @@ const appState = {
   bpm: 120,
   volume: 1.0,
   activeMelody: null,
-  activeMelodyIndex: null, // Добавляем для хранения индекса активной мелодии
+  activeMelodyIndex: null,
   activeSounds: new Map(),
   beatTrack: [],
   trackDuration: 6000,
@@ -27,7 +27,8 @@ let worker;
 // Проверка, является ли устройство мобильным
 const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 const eventType = isMobile ? 'touchstart' : 'click';
-console.log('Устройство мобильное:', isMobile);
+const lowerPanelEventType = 'click'; // Используем click для нижней панели
+console.log('Устройство мобильное:', isMobile, 'eventType:', eventType, 'lowerPanelEventType:', lowerPanelEventType);
 
 const soundPaths = {
   kick: ['access/sounds/kick1.mp3', 'access/sounds/kick2.mp3', 'access/sounds/kick3.mp3'],
@@ -237,17 +238,22 @@ async function preloadAllSounds() {
 }
 
 async function requestMicPermission() {
-  if (navigator.mediaDevices) {
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log('Доступ к микрофону получен');
-    } catch (err) {
-      console.error('Ошибка доступа к микрофону:', err);
-      window.Telegram.WebApp.showAlert('Ошибка доступа к микрофону. Разрешите доступ в настройках.');
-      return false;
-    }
+  console.log('requestMicPermission вызвана');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    console.error('navigator.mediaDevices не поддерживается. Проверьте, используется ли HTTPS.');
+    window.Telegram.WebApp.showAlert('Ошибка: доступ к микрофону не поддерживается. Используйте HTTPS.');
+    return false;
   }
-  return true;
+
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+    console.log('Доступ к микрофону получен');
+    return true;
+  } catch (err) {
+    console.error('Ошибка доступа к микрофону:', err);
+    window.Telegram.WebApp.showAlert('Ошибка доступа к микрофону. Разрешите доступ в настройках.');
+    return false;
+  }
 }
 
 mediaRecorder.ondataavailable = (event) => {
@@ -419,20 +425,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   const recordButton = document.getElementById('recordButton');
   const sendMelodyButton = document.getElementById('sendMelodyButton');
 
+  // Более подробное логирование для проверки
   console.log('soundButtons найдено:', soundButtons.length);
   console.log('melodyTopButtons найдено:', melodyTopButtons.length);
-  console.log('beatTrackElement:', beatTrackElement);
-  console.log('cassette:', cassette);
-  console.log('cassetteContainer:', cassetteContainer);
-  console.log('stopButton:', stopButton);
-  console.log('pauseButton:', pauseButton);
-  console.log('playButton:', playButton);
-  console.log('recordButton:', recordButton);
-  console.log('sendMelodyButton:', sendMelodyButton);
+  console.log('beatTrackElement:', beatTrackElement ? 'найден' : 'не найден');
+  console.log('cassette:', cassette ? 'найден' : 'не найден');
+  console.log('cassetteContainer:', cassetteContainer ? 'найден' : 'не найден');
+  console.log('stopButton:', stopButton ? 'найден' : 'не найден');
+  console.log('pauseButton:', pauseButton ? 'найден' : 'не найден');
+  console.log('playButton:', playButton ? 'найден' : 'не найден');
+  console.log('recordButton:', recordButton ? 'найден' : 'не найден');
+  console.log('sendMelodyButton:', sendMelodyButton ? 'найден' : 'не найден');
 
-  if (!playButton || !stopButton || !recordButton) {
+  if (!playButton || !stopButton || !recordButton || !pauseButton || !sendMelodyButton || !cassette) {
     console.error('Одна из кнопок нижней панели не найдена');
-    window.Telegram.WebApp.showAlert('Ошибка: кнопки Play, Stop или Record не найдены. Проверьте HTML.');
+    window.Telegram.WebApp.showAlert('Ошибка: одна из кнопок нижней панели не найдена. Проверьте HTML.');
     return;
   }
 
@@ -540,7 +547,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           if (isPressed) {
             appState.activeMelody = sound;
-            appState.activeMelodyIndex = index; // Сохраняем индекс активной мелодии
+            appState.activeMelodyIndex = index;
             await playSound(sound, true, true);
           } else {
             appState.activeMelody = null;
@@ -568,7 +575,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  sendMelodyButton.addEventListener(eventType, () => {
+  sendMelodyButton.addEventListener(lowerPanelEventType, () => {
     console.log('sendMelodyButton clicked');
     toggleButtonImage(sendMelodyButton, true);
     if (!appState.activeMelody || appState.activeMelodyIndex === null) {
@@ -590,7 +597,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => toggleButtonImage(sendMelodyButton, false), 100);
   });
 
-  cassette.addEventListener(eventType, async () => {
+  cassette.addEventListener(lowerPanelEventType, async () => {
     console.log('cassette clicked, isRecording:', appState.isRecording);
     if (!appState.isRecording) {
       const permissionGranted = await requestMicPermission();
@@ -616,14 +623,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  recordButton.addEventListener(eventType, async () => {
+  recordButton.addEventListener(lowerPanelEventType, async () => {
     console.log('recordButton clicked, isRecording:', appState.isRecording);
     const isPressed = !recordButton.classList.contains('pressed');
     recordButton.classList.toggle('pressed', isPressed);
     appState.isRecording = isPressed;
     if (isPressed) {
       const permissionGranted = await requestMicPermission();
-      if (!permissionGranted) return;
+      if (!permissionGranted) {
+        appState.isRecording = false;
+        recordButton.classList.remove('pressed');
+        return;
+      }
       try {
         mediaRecorder.start();
         chunks = [];
@@ -645,7 +656,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  playButton.addEventListener(eventType, async () => {
+  playButton.addEventListener(lowerPanelEventType, async () => {
     console.log('playButton clicked, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
     if (!appState.isPlaying) {
       await activateAudioContext();
@@ -658,12 +669,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         await playSound(appState.activeMelody, true, true);
       } else {
         window.Telegram.WebApp.showAlert('Выберите мелодию!');
-        appState.isPlaying = false; // Сбрасываем, если мелодия не выбрана
+        appState.isPlaying = false;
       }
     }
   });
 
-  stopButton.addEventListener(eventType, () => {
+  stopButton.addEventListener(lowerPanelEventType, () => {
     console.log('stopButton clicked');
     appState.isPlaying = false;
     appState.isPaused = false;
@@ -687,7 +698,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     pauseButton.classList.remove('pressed');
   });
 
-  pauseButton.addEventListener(eventType, () => {
+  pauseButton.addEventListener(lowerPanelEventType, () => {
     console.log('pauseButton clicked, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
     if (appState.isPlaying && !appState.isPaused) {
       appState.isPaused = true;
