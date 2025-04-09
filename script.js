@@ -92,7 +92,7 @@ async function loadSound(src) {
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       const gainNode = audioContext.createGain();
       gainNode.gain.value = 0.5 * appState.volume;
-      gainNode.connect(destination); // Только для записи
+      gainNode.connect(destination); // Для записи
 
       audioCache.set(src, { audio, buffer: audioBuffer, gainNode, activeSources: [] });
       console.log(`Звук ${src} добавлен в кэш`);
@@ -115,20 +115,38 @@ async function playSound(audioObj, loop = false) {
   const { audio, buffer, gainNode, activeSources } = audioObj;
 
   // Воспроизведение через <audio>
-  audio.loop = loop;
-  audio.currentTime = 0; // Сбрасываем время для повторного воспроизведения
-  audio.play().catch(err => console.error('Ошибка воспроизведения через <audio>:', err));
-  console.log('Звук воспроизводится через <audio>');
+  try {
+    audio.loop = loop;
+    audio.currentTime = 0;
+    await audio.play();
+    console.log('Звук воспроизводится через <audio>');
+  } catch (err) {
+    console.error('Ошибка воспроизведения через <audio>:', err);
+    window.Telegram.WebApp.showAlert('Не удалось воспроизвести звук. Проверьте громкость или настройки телефона.');
+    return;
+  }
 
-  // Для записи через AudioContext
-  if (appState.isRecording) {
+  // Всегда отправляем звук в destination для записи
+  try {
+    await audioContext.resume(); // Убедимся, что AudioContext активен
+    if (audioContext.state !== 'running') {
+      console.warn('AudioContext не в состоянии running');
+      return;
+    }
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
     source.loop = loop;
     source.connect(gainNode);
+    source.onended = () => {
+      const index = activeSources.indexOf(source);
+      if (index !== -1) activeSources.splice(index, 1);
+      console.log('Источник для записи завершил воспроизведение');
+    };
     source.start(0);
     activeSources.push(source);
-    console.log('Звук отправлен в destination для записи');
+    console.log('Звук отправлен в destination');
+  } catch (err) {
+    console.error('Ошибка отправки звука в destination:', err);
   }
 }
 
@@ -364,7 +382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           console.error(`Звук ${soundSrc} не найден в кэше`);
           return;
         }
-        playSound(sound, false);
+        await playSound(sound, false);
 
         const currentTime = appState.isPlaying && !appState.isPaused 
           ? (performance.now() - appState.trackStartTime) % appState.trackDuration
