@@ -27,8 +27,7 @@ let worker;
 // Проверка, является ли устройство мобильным
 const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 const eventType = isMobile ? 'touchstart' : 'click';
-const lowerPanelEventType = 'click'; // Используем click для нижней панели
-console.log('Устройство мобильное:', isMobile, 'eventType:', eventType, 'lowerPanelEventType:', lowerPanelEventType);
+console.log('Устройство мобильное:', isMobile, 'eventType:', eventType);
 
 const soundPaths = {
   kick: ['access/sounds/kick1.mp3', 'access/sounds/kick2.mp3', 'access/sounds/kick3.mp3'],
@@ -412,6 +411,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Telegram Web App не доступен');
   }
 
+  // Запрашиваем доступ к микрофону сразу при открытии приложения
+  await requestMicPermission();
+
   await Promise.all([preloadAllSounds(), preloadImages()]);
 
   const soundButtons = document.querySelectorAll('.container .pressable:not([id^="melodyTopButton"])');
@@ -450,7 +452,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     button.dataset.sound = soundType;
     button.dataset.soundIndex = soundIndex;
 
-    button.addEventListener(eventType, async () => {
+    button.addEventListener(eventType, async (e) => {
+      e.preventDefault();
       console.log(`soundButton clicked, soundType: ${soundType}, soundIndex: ${soundIndex}`);
       try {
         const soundSrc = soundPaths[soundType][soundIndex];
@@ -575,7 +578,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  sendMelodyButton.addEventListener(lowerPanelEventType, () => {
+  sendMelodyButton.addEventListener(eventType, (e) => {
+    e.preventDefault();
     console.log('sendMelodyButton clicked');
     toggleButtonImage(sendMelodyButton, true);
     if (!appState.activeMelody || appState.activeMelodyIndex === null) {
@@ -597,7 +601,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => toggleButtonImage(sendMelodyButton, false), 100);
   });
 
-  cassette.addEventListener(lowerPanelEventType, async () => {
+  cassette.addEventListener(eventType, async (e) => {
+    e.preventDefault();
     console.log('cassette clicked, isRecording:', appState.isRecording);
     if (!appState.isRecording) {
       const permissionGranted = await requestMicPermission();
@@ -623,7 +628,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  recordButton.addEventListener(lowerPanelEventType, async () => {
+  recordButton.addEventListener(eventType, async (e) => {
+    e.preventDefault();
     console.log('recordButton clicked, isRecording:', appState.isRecording);
     const isPressed = !recordButton.classList.contains('pressed');
     recordButton.classList.toggle('pressed', isPressed);
@@ -656,7 +662,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  playButton.addEventListener(lowerPanelEventType, async () => {
+  playButton.addEventListener(eventType, async (e) => {
+    e.preventDefault();
     console.log('playButton clicked, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
     if (!appState.isPlaying) {
       await activateAudioContext();
@@ -674,7 +681,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  stopButton.addEventListener(lowerPanelEventType, () => {
+  stopButton.addEventListener(eventType, (e) => {
+    e.preventDefault();
     console.log('stopButton clicked');
     appState.isPlaying = false;
     appState.isPaused = false;
@@ -698,7 +706,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     pauseButton.classList.remove('pressed');
   });
 
-  pauseButton.addEventListener(lowerPanelEventType, () => {
+  pauseButton.addEventListener(eventType, (e) => {
+    e.preventDefault();
     console.log('pauseButton clicked, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
     if (appState.isPlaying && !appState.isPaused) {
       appState.isPaused = true;
