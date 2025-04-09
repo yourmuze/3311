@@ -435,19 +435,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   recordButton?.addEventListener(eventType, async (e) => {
     e.preventDefault();
     if (!isAudioLoaded) return;
+  
     console.log('recordButton нажата, isRecording:', appState.isRecording);
+  
     if (appState.isRecording) {
       appState.isRecording = false;
       mediaRecorder?.stop();
+  
       recordButton.classList.remove('pressed');
       toggleButtonImage(recordButton, false);
     } else {
       await requestMicPermission();
       if (!mediaRecorder) return;
+  
       if (mediaRecorder.state === 'recording') mediaRecorder.stop();
+  
       appState.isRecording = true;
       chunks = [];
       mediaRecorder.start();
+  
       recordButton.classList.add('pressed');
       toggleButtonImage(recordButton, true);
     }
@@ -489,20 +495,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   pauseButton?.addEventListener(eventType, (e) => {
     e.preventDefault();
     if (!isAudioLoaded) return;
+  
     console.log('pauseButton нажата, isPlaying:', appState.isPlaying, 'isPaused:', appState.isPaused);
+  
     if (appState.isPlaying && !appState.isPaused) {
+      // Ставим на паузу
       appState.isPaused = true;
       appState.pauseTime = performance.now();
+  
+      // Останавливаем мелодию (если играет)
       if (appState.activeMelody) pauseSound(appState.activeMelody);
+  
       pauseButton.classList.add('pressed');
+      toggleButtonImage(pauseButton, true);
     } else if (appState.isPaused) {
-      appState.isPlaying = true;
+      // Снимаем с паузы
       appState.isPaused = false;
       const pausedDuration = performance.now() - appState.pauseTime;
       appState.trackStartTime += pausedDuration;
+  
       if (appState.activeMelody) appState.activeMelody.audio.play();
+  
       requestAnimationFrame(updateBeatTrack);
+  
       pauseButton.classList.remove('pressed');
+      toggleButtonImage(pauseButton, false);
     }
   });
 
@@ -531,6 +548,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    if (appState.isPlaying) requestAnimationFrame(updateBeatTrack);
+    if (appState.isPlaying && !appState.isPaused) {
+      requestAnimationFrame(updateBeatTrack);
+    }
   }
 });
