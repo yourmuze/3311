@@ -15,11 +15,10 @@ const appState = {
 
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const destination = audioContext.createMediaStreamDestination();
-let mediaRecorder = new MediaRecorder(destination.stream);
+const mediaRecorder = new MediaRecorder(destination.stream);
 let audioCache = new Map();
 let chunks = [];
 let abortController = null;
-let stream = null; // Для getUserMedia
 
 const soundPaths = {
   kick: ['access/sounds/kick1.mp3', 'access/sounds/kick2.mp3', 'access/sounds/kick3.mp3'],
@@ -178,24 +177,6 @@ async function preloadAllSounds() {
   window.Telegram.WebApp.showAlert('Все звуки загружены! Можно начинать.');
 }
 
-// Запасной вариант для записи на телефоне через getUserMedia
-async function setupMediaRecorder() {
-  console.log('setupMediaRecorder вызвана');
-  if (isMobile) {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log('getUserMedia успешно, stream:', stream);
-      mediaRecorder = new MediaRecorder(stream);
-      console.log('mediaRecorder создан с getUserMedia');
-    } catch (err) {
-      console.error('Ошибка getUserMedia:', err);
-      window.Telegram.WebApp.showAlert('Не удалось получить доступ к микрофону. Разрешите доступ в настройках.');
-      // Падём обратно на AudioContext
-      mediaRecorder = new MediaRecorder(destination.stream);
-    }
-  }
-}
-
 mediaRecorder.ondataavailable = (event) => {
   console.log('mediaRecorder.ondataavailable вызвана');
   if (event.data.size > 0) {
@@ -210,61 +191,46 @@ mediaRecorder.onstop = async () => {
   console.log('mediaRecorder.onstop вызвана');
   console.log('Состояние mediaRecorder:', mediaRecorder.state);
 
-  // Останавливаем поток, если использовали getUserMedia
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-    stream = null;
-    console.log('Поток getUserMedia остановлен');
-  }
-
   if (chunks.length === 0) {
     console.log('Ошибка: chunks пустой');
-    window.Telegram.WebApp.showAlert('Ошибка: нет данных для записи. Попробуйте записать снова.');
+    window.Telegram.WebApp.showAlert('Ошибка: нет данных для записи. Убедитесь, что звук воспроизводится во время записи.');
     return;
   }
 
-  const blob = isMobile ? new Blob(chunks, { type: 'audio/webm' }) : new Blob(chunks, { type: 'audio/wav' });
+  const blob = new Blob(chunks, { type: 'audio/wav' });
   chunks = [];
-  console.log('Запись завершена. Размер Blob:', blob.size);
+  console.log('Запись завершена. Размер WAV Blob:', blob.size);
 
   if (blob.size === 0) {
-    console.log('Ошибка: Blob пустой');
+    console.log('Ошибка: WAV Blob пустой');
     window.Telegram.WebApp.showAlert('Ошибка: записанный файл пустой. Попробуйте записать дольше.');
     return;
   }
 
   try {
-    let mp3Blob;
-    if (isMobile) {
-      // На мобильных устройствах используем WebM напрямую (Telegram поддерживает WebM)
-      mp3Blob = blob;
-      console.log('Используем WebM для мобильного устройства');
-    } else {
-      // На десктопе конвертируем в MP3
-      console.log('Чтение WAV Blob в ArrayBuffer...');
-      const arrayBuffer = await blob.arrayBuffer();
-      console.log('ArrayBuffer получен, размер:', arrayBuffer.byteLength);
+    console.log('Чтение WAV Blob в ArrayBuffer...');
+    const arrayBuffer = await blob.arrayBuffer();
+    console.log('ArrayBuffer получен, размер:', arrayBuffer.byteLength);
 
-      console.log('Декодирование аудио...');
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      console.log('AudioBuffer декодирован, длительность:', audioBuffer.duration);
+    console.log('Декодирование аудио...');
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    console.log('AudioBuffer декодирован, длительность:', audioBuffer.duration);
 
-      if (audioBuffer.duration < 1) {
-        console.log('Ошибка: запись слишком короткая');
-        window.Telegram.WebApp.showAlert('Запись слишком короткая. Запишите минимум 1 секунду.');
-        return;
-      }
-
-      const channelData = audioBuffer.getChannelData(0);
-      console.log('ChannelData получен, длина:', channelData.length);
-
-      console.log('Конвертация в MP3...');
-      const mp3encoder = new lamejs.Mp3Encoder(1, audioBuffer.sampleRate, 128);
-      const mp3Data = mp3encoder.encodeBuffer(Float32Array.from(channelData).map(x => x * 32767));
-      const mp3End = mp3encoder.flush();
-      mp3Blob = new Blob([mp3Data, mp3End], { type: 'audio/mp3' });
-      console.log('Конвертация завершена. Размер MP3 Blob:', mp3Blob.size);
+    if (audioBuffer.duration < 1) {
+      console.log('Ошибка: запись слишком короткая');
+      window.Telegram.WebApp.showAlert('Запись слишком короткая. Запишите минимум 1 секунду.');
+      return;
     }
+
+    const channelData = audioBuffer.getChannelData(0);
+    console.log('ChannelData получен, длина:', channelData.length);
+
+    console.log('Конвертация в MP3...');
+    const mp3encoder = new lamejs.Mp3Encoder(1, audioBuffer.sampleRate, 128);
+    const mp3Data = mp3encoder.encodeBuffer(Float32Array.from(channelData).map(x => x * 32767));
+    const mp3End = mp3encoder.flush();
+    const mp3Blob = new Blob([mp3Data, mp3End], { type: 'audio/mp3' });
+    console.log('Конвертация завершена. Размер MP3 Blob:', mp3Blob.size);
 
     if (mp3Blob.size === 0) {
       console.log('Ошибка: MP3 Blob пустой');
@@ -272,11 +238,11 @@ mediaRecorder.onstop = async () => {
       return;
     }
 
-    console.log('Скачивание файла для отладки...');
+    console.log('Скачивание MP3 для отладки...');
     const url = URL.createObjectURL(mp3Blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = isMobile ? 'test.webm' : 'test.mp3';
+    a.download = 'test.mp3';
     a.click();
     URL.revokeObjectURL(url);
 
@@ -289,7 +255,7 @@ mediaRecorder.onstop = async () => {
     }
 
     const formData = new FormData();
-    formData.append('audio', mp3Blob, isMobile ? 'recording.webm' : 'recording.mp3');
+    formData.append('audio', mp3Blob, 'recording.mp3');
     formData.append('chat_id', chatId);
 
     console.log('Показываем индикатор отправки...');
@@ -364,89 +330,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  document.addEventListener('click', activateAudioContext, { once: true });
-  document.addEventListener('touchstart', activateAudioContext, { once: true });
+  // Добавляем обработчики для всех возможных событий
+  document.addEventListener('click', activateAudioContext);
+  document.addEventListener('touchstart', activateAudioContext);
+  document.addEventListener('touchend', activateAudioContext);
+  document.addEventListener('mousedown', activateAudioContext);
+  document.addEventListener('mouseup', activateAudioContext);
 
   await preloadAllSounds();
-
-  // Настраиваем MediaRecorder для мобильных устройств
-  await setupMediaRecorder();
-
-  function adjustButtonSizes() {
-    console.log('adjustButtonSizes вызвана');
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const buttons = document.querySelectorAll('.pressable');
-    const downButtons = document.querySelectorAll('.downButton');
-    const beatTrack = document.querySelector('.beat-track');
-    const cassetteContainer = document.querySelector('.cassette-container');
-    const container = document.querySelector('.container');
-    const melodyTopContainer = document.querySelector('.melody-top-container');
-    const containerDown = document.querySelector('.containerdown');
-
-    document.body.style.margin = '0';
-    document.body.style.padding = '0';
-    document.body.style.background = '#f0f0f0';
-    document.body.style.fontFamily = 'Arial, sans-serif';
-    document.body.style.overflowX = 'hidden';
-
-    const containerWidth = Math.min(viewportWidth * 0.9, 600);
-    container.style.width = `${containerWidth}px`;
-    container.style.margin = '2vh auto';
-    container.style.display = 'grid';
-    container.style.gridTemplateColumns = 'repeat(3, 1fr)';
-    container.style.gap = `${Math.min(viewportWidth * 0.02, 10)}px`;
-
-    melodyTopContainer.style.width = `${containerWidth}px`;
-    melodyTopContainer.style.margin = '2vh auto';
-    melodyTopContainer.style.display = 'flex';
-    melodyTopContainer.style.justifyContent = 'center';
-    melodyTopContainer.style.gap = `${Math.min(viewportWidth * 0.02, 10)}px`;
-
-    containerDown.style.width = `${containerWidth}px`;
-    containerDown.style.margin = '2vh auto';
-    containerDown.style.display = 'flex';
-    containerDown.style.alignItems = 'center';
-    containerDown.style.justifyContent = 'center';
-    containerDown.style.gap = `${Math.min(viewportWidth * 0.02, 10)}px`;
-
-    cassetteContainer.style.width = `${containerWidth}px`;
-    cassetteContainer.style.margin = '2vh auto';
-
-    buttons.forEach(button => {
-      const size = Math.min(viewportWidth * 0.15, viewportHeight * 0.15, 80);
-      button.style.width = `${size}px`;
-      button.style.height = `${size}px`;
-      button.style.objectFit = 'contain';
-      button.style.cursor = 'pointer';
-    });
-
-    downButtons.forEach(button => {
-      const size = Math.min(viewportWidth * 0.1, viewportHeight * 0.1, 60);
-      button.style.width = `${size}px`;
-      button.style.height = `${size}px`;
-      button.style.objectFit = 'contain';
-      button.style.cursor = 'pointer';
-    });
-
-    const trackHeight = Math.min(viewportHeight * 0.05, 40);
-    beatTrack.style.height = `${trackHeight}px`;
-    beatTrack.style.background = '#ddd';
-    beatTrack.style.position = 'relative';
-    beatTrack.style.borderRadius = '5px';
-    beatTrack.style.overflow = 'hidden';
-    beatTrack.style.flex = '1';
-
-    const progressBar = document.getElementById('progressBar');
-    progressBar.style.height = '100%';
-    progressBar.style.background = '#4caf50';
-    progressBar.style.position = 'absolute';
-    progressBar.style.top = '0';
-    progressBar.style.left = '0';
-  }
-
-  adjustButtonSizes();
-  window.addEventListener('resize', adjustButtonSizes);
 
   const soundButtons = document.querySelectorAll('.container .pressable:not([id^="melodyTopButton"])');
   const melodyTopButtons = document.querySelectorAll('.pressable[id^="melodyTopButton"]');
@@ -465,6 +356,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     cassetteContainer.classList.toggle('recording', appState.isRecording);
     if (appState.isRecording) {
       console.log('Начало записи, состояние mediaRecorder:', mediaRecorder.state);
+      if (audioContext.state !== 'running') {
+        await audioContext.resume();
+        console.log('AudioContext активирован перед записью');
+      }
       if (mediaRecorder.state === 'inactive') {
         mediaRecorder.start();
       } else {
@@ -491,6 +386,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isPressed) {
       appState.isRecording = true;
       console.log('Начало записи с кнопки, состояние mediaRecorder:', mediaRecorder.state);
+      if (audioContext.state !== 'running') {
+        await audioContext.resume();
+        console.log('AudioContext активирован перед записью');
+      }
       if (mediaRecorder.state === 'inactive') {
         mediaRecorder.start();
       } else {
